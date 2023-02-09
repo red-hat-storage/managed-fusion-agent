@@ -54,7 +54,6 @@ import (
 	ovnv1 "github.com/ovn-org/ovn-kubernetes/go-controller/pkg/crd/egressfirewall/v1"
 	promv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	promv1a1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1alpha1"
-	odfv1a1 "github.com/red-hat-data-services/odf-operator/api/v1alpha1"
 	ocsv1 "github.com/red-hat-storage/ocs-operator/api/v1"
 	ocsv1alpha1 "github.com/red-hat-storage/ocs-operator/api/v1alpha1"
 	v1 "github.com/red-hat-storage/ocs-osd-deployer/api/v1alpha1"
@@ -465,45 +464,25 @@ func (r *ManagedOCSReconciler) reconcilePhases() (reconcile.Result, error) {
 	// Uninstallation depends on the status of the components.
 	// We are checking the uninstallation condition before getting the component status
 	// to mitigate scenarios where changes to the component status occurs while the uninstallation logic is running.
-	initiateUninstall := r.checkUninstallCondition()
+
 	// Update the status of the components
 	r.updateComponentStatus()
 
 	if !r.managedOCS.DeletionTimestamp.IsZero() {
-		if r.verifyComponentsDoNotExist() {
-			// Deleting OCS CSV from the namespace
-			r.Log.Info("deleting OCS CSV")
-			if err := r.deleteCSVByPrefix(ocsOperatorName); err != nil {
-				return ctrl.Result{}, fmt.Errorf("unable to delete csv: %v", err)
-			}
+		if !r.areComponentsReadyForUninstall() {
+			r.Log.Info("Sub-components are not in ready state, cannot proceed with uninstallation")
+			return ctrl.Result{Requeue: true, RequeueAfter: 10 * time.Second}, nil
+		}
 
-			r.Log.Info("removing finalizer from the ManagedOCS resource")
-			r.managedOCS.SetFinalizers(utils.Remove(r.managedOCS.GetFinalizers(), ManagedOCSFinalizer))
-			if err := r.Client.Update(r.ctx, r.managedOCS); err != nil {
-				return ctrl.Result{}, fmt.Errorf("failed to remove finalizer from managedOCS: %v", err)
-			}
-			r.Log.Info("finallizer removed successfully")
+		r.Log.Info("removing finalizer from the ManagedOCS resource")
+		r.managedOCS.SetFinalizers(utils.Remove(r.managedOCS.GetFinalizers(), ManagedOCSFinalizer))
+		if err := r.Client.Update(r.ctx, r.managedOCS); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to remove finalizer from managedOCS: %v", err)
+		}
+		r.Log.Info("finallizer removed successfully")
 
-		} else {
-			// Storage cluster needs to be deleted before we delete the CSV so we can not leave it to the
-			// k8s garbage collector to delete it
-			r.Log.Info("deleting storagecluster")
-			if err := r.delete(r.storageCluster); err != nil {
-				return ctrl.Result{}, fmt.Errorf("unable to delete storagecluster: %v", err)
-			}
-
-			// Deleting all storage systems from the namespace
-			r.Log.Info("deleting storageSystems")
-			storageSystemList := odfv1a1.StorageSystemList{}
-			if err := r.list(&storageSystemList); err != nil {
-				return ctrl.Result{}, fmt.Errorf("unable to list storageSystem resource: %v", err)
-			}
-			for i := range storageSystemList.Items {
-				storageSystem := storageSystemList.Items[i]
-				if err := r.delete(&storageSystem); err != nil {
-					return ctrl.Result{}, fmt.Errorf("unable to delete storageSystem: %v", err)
-				}
-			}
+		if err := r.removeOLMComponents(); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to remove agent CSV: %v", err)
 		}
 
 	} else if r.managedOCS.UID != "" {
@@ -515,55 +494,6 @@ func (r *ManagedOCSReconciler) reconcilePhases() (reconcile.Result, error) {
 			}
 		}
 
-		// Find the effective reconcile strategy
-		r.reconcileStrategy = v1.ReconcileStrategyStrict
-		if strings.EqualFold(string(r.managedOCS.Spec.ReconcileStrategy), string(v1.ReconcileStrategyNone)) {
-			r.reconcileStrategy = v1.ReconcileStrategyNone
-		}
-
-		// Read the add-on parameters secret and store it an addonParams map
-		addonParamSecret := &corev1.Secret{}
-		addonParamSecret.Name = r.AddonParamSecretName
-		addonParamSecret.Namespace = r.namespace
-		if err := r.get(addonParamSecret); err != nil {
-			return ctrl.Result{}, fmt.Errorf("Failed to get the addon parameters secret %v", r.AddonParamSecretName)
-		}
-		for key, value := range addonParamSecret.Data {
-			r.addonParams[key] = string(value)
-		}
-
-		// Deprecating consumer requested capacity addon parameter by overriding it with a very high pre-defined value
-		if r.DeploymentType == consumerDeploymentType {
-			r.Log.Info(fmt.Sprintf("Overriding addon parameter '%s' (currently '%s') with 1024", storageSizeKey, r.addonParams[storageSizeKey]))
-			r.addonParams[storageSizeKey] = "1024"
-
-			r.Log.Info(fmt.Sprintf("Overriding addon parameter '%s' (currently '%s') with Ti", storageUnitKey, r.addonParams[storageUnitKey]))
-			r.addonParams[storageUnitKey] = "Ti"
-		}
-
-		// Reconcile the different resources
-		if err := r.reconcileRookCephOperatorConfig(); err != nil {
-			return ctrl.Result{}, err
-		}
-		// Reconciles only for provider deployment type
-		if err := r.reconcileOnboardingValidationSecret(); err != nil {
-			return ctrl.Result{}, err
-		}
-		if err := r.reconcileStorageCluster(); err != nil {
-			return ctrl.Result{}, err
-		}
-		if err := r.reconcileCSV(); err != nil {
-			return ctrl.Result{}, err
-		}
-		if err := r.reconcileAlertRelabelConfigSecret(); err != nil {
-			return ctrl.Result{}, err
-		}
-		if err := r.reconcilePrometheusKubeRBACConfigMap(); err != nil {
-			return ctrl.Result{}, err
-		}
-		if err := r.reconcilePrometheusService(); err != nil {
-			return ctrl.Result{}, err
-		}
 		if err := r.reconcilePrometheus(); err != nil {
 			return ctrl.Result{}, err
 		}
@@ -573,77 +503,6 @@ func (r *ManagedOCSReconciler) reconcilePhases() (reconcile.Result, error) {
 		if err := r.reconcileAlertmanagerConfig(); err != nil {
 			return ctrl.Result{}, err
 		}
-		if err := r.reconcileK8SMetricsServiceMonitor(); err != nil {
-			return ctrl.Result{}, err
-		}
-		if err := r.reconcileMonitoringResources(); err != nil {
-			return ctrl.Result{}, err
-		}
-		if err := r.reconcileDMSPrometheusRule(); err != nil {
-			return ctrl.Result{}, err
-		}
-		if err := r.reconcileOCSInitialization(); err != nil {
-			return ctrl.Result{}, err
-		}
-		if err := r.reconcilePrometheusProxyNetworkPolicy(); err != nil {
-			return ctrl.Result{}, err
-		}
-		if err := r.reconcileEgressFirewall(); err != nil {
-			return ctrl.Result{}, err
-		}
-		if err := r.reconcileEgressNetworkPolicy(); err != nil {
-			return ctrl.Result{}, err
-		}
-		if err := r.reconcileIngressNetworkPolicy(); err != nil {
-			return ctrl.Result{}, err
-		}
-		if err := r.reconcileCephIngressNetworkPolicy(); err != nil {
-			return ctrl.Result{}, err
-		}
-		if err := r.reconcileProviderAPIServerNetworkPolicy(); err != nil {
-			return ctrl.Result{}, err
-		}
-
-		r.managedOCS.Status.ReconcileStrategy = r.reconcileStrategy
-
-		// Check if we need and can uninstall
-		if initiateUninstall && r.areComponentsReadyForUninstall() {
-			switch r.DeploymentType {
-			case convergedDeploymentType, consumerDeploymentType:
-				found, err := r.hasOCSVolumes()
-				if err != nil {
-					return ctrl.Result{}, err
-				}
-				if found {
-					r.Log.Info("Found consumer PVs using OCS storageclasses, cannot proceed with uninstallation")
-					return ctrl.Result{Requeue: true, RequeueAfter: 10 * time.Second}, nil
-				}
-			case providerDeploymentType:
-				found, err := r.hasOCSStorageConsumers()
-				if err != nil {
-					return ctrl.Result{}, err
-				}
-				if found {
-					r.Log.Info("Found OCS storage consumers, cannot proceed with uninstallation")
-					return ctrl.Result{Requeue: true, RequeueAfter: 10 * time.Second}, nil
-				}
-			}
-			r.Log.Info("starting OCS uninstallation - deleting managedocs")
-			if err := r.delete(r.managedOCS); err != nil {
-				return ctrl.Result{}, fmt.Errorf("unable to delete managedocs: %v", err)
-			}
-			// Refreshing local managedOCS object after deletion is scheduled
-			// to avoid conflict while updating status
-			if err := r.get(r.managedOCS); err != nil {
-				if !errors.IsNotFound(err) {
-					return ctrl.Result{}, err
-				}
-				r.Log.V(-1).Info("Trying to reload ManagedOCS resource after delete failed, ManagedOCS resource not found")
-			}
-		}
-
-	} else if initiateUninstall {
-		return ctrl.Result{}, r.removeOLMComponents()
 	}
 
 	return ctrl.Result{}, nil
