@@ -151,7 +151,6 @@ type ManagedOCSReconciler struct {
 	alertRelabelConfigSecret       *corev1.Secret
 	k8sMetricsServiceMonitor       *promv1.ServiceMonitor
 	namespace                      string
-	reconcileStrategy              v1.ReconcileStrategy
 	addonParams                    map[string]string
 	onboardingValidationKeySecret  *corev1.Secret
 	prometheusKubeRBACConfigMap    *corev1.ConfigMap
@@ -613,31 +612,30 @@ func (r *ManagedOCSReconciler) reconcileStorageCluster() error {
 		}
 
 		// Handle only strict mode reconciliation
-		if r.reconcileStrategy == v1.ReconcileStrategyStrict {
-			var desired *ocsv1.StorageCluster = nil
-			switch r.DeploymentType {
-			case convergedDeploymentType:
-				var err error
-				if desired, err = r.getDesiredConvergedStorageCluster(); err != nil {
-					return err
-				}
-			case consumerDeploymentType:
-				var err error
-				if desired, err = r.getDesiredConsumerStorageCluster(); err != nil {
-					return err
-				}
-			case providerDeploymentType:
-				var err error
-				if desired, err = r.getDesiredProviderStorageCluster(); err != nil {
-					return err
-				}
-			default:
-				return fmt.Errorf("Invalid deployment type value: %v", r.DeploymentType)
+
+		var desired *ocsv1.StorageCluster = nil
+		switch r.DeploymentType {
+		case convergedDeploymentType:
+			var err error
+			if desired, err = r.getDesiredConvergedStorageCluster(); err != nil {
+				return err
 			}
-			// Override storage cluster spec with desired spec from the template.
-			// We do not replace meta or status on purpose
-			r.storageCluster.Spec = desired.Spec
+		case consumerDeploymentType:
+			var err error
+			if desired, err = r.getDesiredConsumerStorageCluster(); err != nil {
+				return err
+			}
+		case providerDeploymentType:
+			var err error
+			if desired, err = r.getDesiredProviderStorageCluster(); err != nil {
+				return err
+			}
+		default:
+			return fmt.Errorf("Invalid deployment type value: %v", r.DeploymentType)
 		}
+		// Override storage cluster spec with desired spec from the template.
+		// We do not replace meta or status on purpose
+		r.storageCluster.Spec = desired.Spec
 		return nil
 	})
 	if err != nil {

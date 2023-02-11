@@ -3,8 +3,9 @@ package controllers
 import (
 	"context"
 	"fmt"
-	ovnv1 "github.com/ovn-org/ovn-kubernetes/go-controller/pkg/crd/egressfirewall/v1"
 	"time"
+
+	ovnv1 "github.com/ovn-org/ovn-kubernetes/go-controller/pkg/crd/egressfirewall/v1"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -1166,83 +1167,6 @@ var _ = Describe("ManagedOCS controller", func() {
 
 				// Wait for the storagecluster to be recreated
 				utils.WaitForResource(k8sClient, ctx, scTemplate.DeepCopy(), timeout, interval)
-			})
-		})
-		When("the storagecluster resource is modified while the reconcile strategy is not set", func() {
-			It("should revert the changes and bring the resource back to its managed state", func() {
-				// Set managed OCS to reconcile strategy to strict
-				managedOCS := managedOCSTemplate.DeepCopy()
-				Expect(k8sClient.Get(ctx, utils.GetResourceKey(managedOCS), managedOCS)).Should(Succeed())
-				managedOCS.Spec.ReconcileStrategy = ""
-				Expect(k8sClient.Update(ctx, managedOCS)).Should(Succeed())
-
-				// Get an updated storagecluster
-				sc := scTemplate.DeepCopy()
-				scKey := utils.GetResourceKey(sc)
-				Expect(k8sClient.Get(ctx, scKey, sc)).Should(Succeed())
-
-				// Update to empty spec
-				spec := sc.Spec.DeepCopy()
-				sc.Spec = ocsv1.StorageClusterSpec{}
-				Expect(k8sClient.Update(ctx, sc)).Should(Succeed())
-
-				// Wait for the spec changes to be reverted
-				Eventually(func() *ocsv1.StorageClusterSpec {
-					sc := scTemplate.DeepCopy()
-					Expect(k8sClient.Get(ctx, scKey, sc)).Should(Succeed())
-					return &sc.Spec
-				}, timeout, interval).Should(Equal(spec))
-			})
-		})
-		When("the storagecluster resource is modified while the reconcile strategy is set to strict", func() {
-			It("should revert the changes and bring the resource back to its managed state", func() {
-				// Set managed OCS to reconcile strategy to strict
-				managedOCS := managedOCSTemplate.DeepCopy()
-				Expect(k8sClient.Get(ctx, utils.GetResourceKey(managedOCS), managedOCS)).Should(Succeed())
-				managedOCS.Spec.ReconcileStrategy = v1.ReconcileStrategyStrict
-				Expect(k8sClient.Update(ctx, managedOCS)).Should(Succeed())
-
-				// Get an updated storagecluster
-				sc := scTemplate.DeepCopy()
-				scKey := utils.GetResourceKey(sc)
-				Expect(k8sClient.Get(ctx, scKey, sc)).Should(Succeed())
-
-				// Update to empty spec
-				spec := sc.Spec.DeepCopy()
-				sc.Spec = ocsv1.StorageClusterSpec{}
-				Expect(k8sClient.Update(ctx, sc)).Should(Succeed())
-
-				// Wait for the spec changes to be reverted
-				Eventually(func() *ocsv1.StorageClusterSpec {
-					sc := scTemplate.DeepCopy()
-					Expect(k8sClient.Get(ctx, scKey, sc)).Should(Succeed())
-					return &sc.Spec
-				}, timeout, interval).Should(Equal(spec))
-			})
-		})
-		When("the storagecluster resource is modified while the reconcile strategy is set to none", func() {
-			It("should not revert any changes back to the managed state", func() {
-				// Set managed OCS to reconcile strategy to none
-				managedOCS := managedOCSTemplate.DeepCopy()
-				Expect(k8sClient.Get(ctx, utils.GetResourceKey(managedOCS), managedOCS)).Should(Succeed())
-				managedOCS.Spec.ReconcileStrategy = v1.ReconcileStrategyNone
-				Expect(k8sClient.Update(ctx, managedOCS)).Should(Succeed())
-
-				// Get an updated storagecluster
-				sc := scTemplate.DeepCopy()
-				scKey := utils.GetResourceKey(sc)
-				Expect(k8sClient.Get(ctx, scKey, sc)).Should(Succeed())
-
-				// Update to empty spec
-				sc.Spec = ocsv1.StorageClusterSpec{}
-				Expect(k8sClient.Update(ctx, sc)).Should(Succeed())
-
-				// Verify that the spec changes are not reverted
-				Consistently(func() *ocsv1.StorageClusterSpec {
-					sc := scTemplate.DeepCopy()
-					Expect(k8sClient.Get(ctx, scKey, sc)).Should(Succeed())
-					return &sc.Spec
-				}, timeout, interval).Should(Equal(&sc.Spec))
 			})
 		})
 		When("the prometheus resource is modified", func() {

@@ -37,10 +37,26 @@ spec:
           spec:
             description: ManagedOCSSpec defines the desired state of ManagedOCS
             properties:
-              reconcileStrategy:
-                description: ReconcileStrategy represent the action the deployer should
-                  take whenever a recncile event occures
-                type: string
+              pager:
+                description: PagerSpec defines the desired state of Pager configuration
+                properties:
+                  sopEndpoint:
+                    type: string
+                type: object
+              smtp:
+                description: SMTPSpec defines the desired state of SMTP configuration
+                properties:
+                  endpoint:
+                    type: string
+                  fromAddress:
+                    type: string
+                  notificationEmails:
+                    items:
+                      type: string
+                    type: array
+                  username:
+                    type: string
+                type: object
             type: object
           status:
             description: ManagedOCSStatus defines the observed state of ManagedOCS
@@ -73,10 +89,6 @@ spec:
                 - prometheus
                 - storageCluster
                 type: object
-              reconcileStrategy:
-                description: ReconcileStrategy represent the action the deployer should
-                  take whenever a recncile event occures
-                type: string
             required:
             - components
             type: object

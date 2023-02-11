@@ -20,22 +20,23 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// ReconcileStrategy represent the action the deployer should take whenever a recncile event occures
-type ReconcileStrategy string
+// SMTPSpec defines the desired state of SMTP configuration
+type SMTPSpec struct {
+	Endpoint           string   `json:"endpoint,omitempty"`
+	Username           string   `json:"username,omitempty"`
+	FromAddress        string   `json:"fromAddress,omitempty"`
+	NotificationEmails []string `json:"notificationEmails,omitempty"`
+}
 
-const (
-	// ReconcileStrategyNone is used to indicate that the deployer should not
-	// touch the storage cluster spec
-	ReconcileStrategyNone ReconcileStrategy = "none"
-
-	// ReconcileStrategyStrict is used to indicate that the deployer should enforce
-	// storage clsuter based on a predefined spec
-	ReconcileStrategyStrict ReconcileStrategy = "strict"
-)
+// PagerSpec defines the desired state of Pager configuration
+type PagerSpec struct {
+	SOPEndpoint string `json:"sopEndpoint,omitempty"`
+}
 
 // ManagedOCSSpec defines the desired state of ManagedOCS
 type ManagedOCSSpec struct {
-	ReconcileStrategy ReconcileStrategy `json:"reconcileStrategy,omitempty"`
+	SMTP  SMTPSpec  `json:"smtp,omitempty"`
+	Pager PagerSpec `json:"pager,omitempty"`
 }
 
 type ComponentState string
@@ -59,7 +60,6 @@ type ComponentStatusMap struct {
 
 // ManagedOCSStatus defines the observed state of ManagedOCS
 type ManagedOCSStatus struct {
-	ReconcileStrategy ReconcileStrategy  `json:"reconcileStrategy,omitempty"`
 	Components        ComponentStatusMap `json:"components"`
 }
 
