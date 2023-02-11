@@ -18,7 +18,7 @@ const (
 
 func isReady(client client.Client, managedOCSResource types.NamespacedName) (bool, error) {
 
-	var managedOCS v1.ManagedOCS
+	var managedOCS v1.ManagedFusionDeployment
 
 	if err := client.Get(context.Background(), managedOCSResource, &managedOCS); err != nil {
 		return false, err

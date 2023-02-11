@@ -37,7 +37,7 @@ var _ = Describe("ManagedOCS controller", func() {
 	)
 
 	ctx := context.Background()
-	managedOCSTemplate := &v1.ManagedOCS{
+	managedOCSTemplate := &v1.ManagedFusionDeployment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      managedOCSName,
 			Namespace: testPrimaryNamespace,

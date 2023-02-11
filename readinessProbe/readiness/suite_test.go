@@ -91,7 +91,7 @@ var _ = BeforeSuite(func() {
 
 		ctx := context.Background()
 
-		managedOCS := &v1.ManagedOCS{
+		managedOCS := &v1.ManagedFusionDeployment{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      ManagedOCSName,
 				Namespace: TestNamespace,
@@ -106,7 +106,7 @@ var _ = BeforeSuite(func() {
 var _ = AfterSuite(func() {
 	ctx := context.Background()
 
-	managedOCS := &v1.ManagedOCS{
+	managedOCS := &v1.ManagedFusionDeployment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      ManagedOCSName,
 			Namespace: TestNamespace,

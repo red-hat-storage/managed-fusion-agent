@@ -5,22 +5,23 @@ metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.8.0
   creationTimestamp: null
-  name: managedocs.ocs.openshift.io
+  name: managedfusiondeployments.ocs.openshift.io
 spec:
   group: ocs.openshift.io
   names:
-    kind: ManagedOCS
-    listKind: ManagedOCSList
-    plural: managedocs
+    kind: ManagedFusionDeployment
+    listKind: ManagedFusionDeploymentList
+    plural: managedfusiondeployments
     shortNames:
-    - mocs
-    singular: managedocs
+    - mfd
+    singular: managedfusiondeployment
   scope: Namespaced
   versions:
   - name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: ManagedOCS is the Schema for the managedocs API
+        description: ManagedFusionDeployment is the Schema for the ManagedFusionDeployment
+          API
         properties:
           apiVersion:
             description: 'APIVersion defines the versioned schema of this representation
@@ -35,7 +36,8 @@ spec:
           metadata:
             type: object
           spec:
-            description: ManagedOCSSpec defines the desired state of ManagedOCS
+            description: ManagedFusionDeploymentSpec defines the desired state of
+              ManagedFusionDeployment
             properties:
               pager:
                 description: PagerSpec defines the desired state of Pager configuration
@@ -59,7 +61,8 @@ spec:
                 type: object
             type: object
           status:
-            description: ManagedOCSStatus defines the observed state of ManagedOCS
+            description: ManagedFusionDeploymentStatus defines the observed state
+              of ManagedFusionDeployment
             properties:
               components:
                 properties:

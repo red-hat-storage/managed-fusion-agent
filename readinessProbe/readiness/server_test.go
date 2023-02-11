@@ -14,7 +14,7 @@ import (
 var _ = Describe("ManagedOCS readiness probe behavior", func() {
 	ctx := context.Background()
 
-	managedOCS := &v1.ManagedOCS{
+	managedOCS := &v1.ManagedFusionDeployment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      ManagedOCSName,
 			Namespace: TestNamespace,
@@ -51,7 +51,7 @@ var _ = Describe("ManagedOCS readiness probe behavior", func() {
 			return err
 		}
 
-		managedOCS.Status = v1.ManagedOCSStatus{
+		managedOCS.Status = v1.ManagedFusionDeploymentStatus{
 			Components: v1.ComponentStatusMap{
 				StorageCluster: v1.ComponentStatus{
 					State: scStatus,

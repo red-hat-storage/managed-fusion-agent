@@ -201,7 +201,7 @@ func readEnvVars() (map[string]string, error) {
 }
 
 func ensureManagedOCS(c client.Client, log logr.Logger, envVars map[string]string) error {
-	err := c.Create(context.Background(), &v1.ManagedOCS{
+	err := c.Create(context.Background(), &v1.ManagedFusionDeployment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:       "managedocs",
 			Namespace:  envVars[namespaceEnvVarName],

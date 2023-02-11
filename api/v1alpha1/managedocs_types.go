@@ -33,8 +33,8 @@ type PagerSpec struct {
 	SOPEndpoint string `json:"sopEndpoint,omitempty"`
 }
 
-// ManagedOCSSpec defines the desired state of ManagedOCS
-type ManagedOCSSpec struct {
+// ManagedFusionDeploymentSpec defines the desired state of ManagedFusionDeployment
+type ManagedFusionDeploymentSpec struct {
 	SMTP  SMTPSpec  `json:"smtp,omitempty"`
 	Pager PagerSpec `json:"pager,omitempty"`
 }
@@ -58,33 +58,33 @@ type ComponentStatusMap struct {
 	Alertmanager   ComponentStatus `json:"alertmanager"`
 }
 
-// ManagedOCSStatus defines the observed state of ManagedOCS
-type ManagedOCSStatus struct {
-	Components        ComponentStatusMap `json:"components"`
+// ManagedFusionDeploymentStatus defines the observed state of ManagedFusionDeployment
+type ManagedFusionDeploymentStatus struct {
+	Components ComponentStatusMap `json:"components"`
 }
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
-// +kubebuilder:resource:shortName=mocs
+// +kubebuilder:resource:shortName=mfd
 
-// ManagedOCS is the Schema for the managedocs API
-type ManagedOCS struct {
+// ManagedFusionDeployment is the Schema for the ManagedFusionDeployment API
+type ManagedFusionDeployment struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Spec   ManagedOCSSpec   `json:"spec,omitempty"`
-	Status ManagedOCSStatus `json:"status,omitempty"`
+	Spec   ManagedFusionDeploymentSpec   `json:"spec,omitempty"`
+	Status ManagedFusionDeploymentStatus `json:"status,omitempty"`
 }
 
 // +kubebuilder:object:root=true
 
-// ManagedOCSList contains a list of ManagedOCS
-type ManagedOCSList struct {
+// ManagedFusionDeploymentList contains a list of ManagedFusionDeployment
+type ManagedFusionDeploymentList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
-	Items           []ManagedOCS `json:"items"`
+	Items           []ManagedFusionDeployment `json:"items"`
 }
 
 func init() {
-	SchemeBuilder.Register(&ManagedOCS{}, &ManagedOCSList{})
+	SchemeBuilder.Register(&ManagedFusionDeployment{}, &ManagedFusionDeploymentList{})
 }

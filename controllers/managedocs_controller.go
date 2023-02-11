@@ -132,7 +132,7 @@ type ManagedOCSReconciler struct {
 	AvailableCRDs                map[string]bool
 
 	ctx                            context.Context
-	managedOCS                     *v1.ManagedOCS
+	managedOCS                     *v1.ManagedFusionDeployment
 	storageCluster                 *ocsv1.StorageCluster
 	egressNetworkPolicy            *openshiftv1.EgressNetworkPolicy
 	egressFirewall                 *ovnv1.EgressFirewall
@@ -267,7 +267,7 @@ func (r *ManagedOCSReconciler) SetupWithManager(mgr ctrl.Manager, ctrlOptions *c
 
 	managedOCSController := ctrl.NewControllerManagedBy(mgr).
 		WithOptions(*ctrlOptions).
-		For(&v1.ManagedOCS{}, managedOCSPredicates).
+		For(&v1.ManagedFusionDeployment{}, managedOCSPredicates).
 
 		// Watch owned resources
 		Owns(&ocsv1.StorageCluster{}).
@@ -378,7 +378,7 @@ func (r *ManagedOCSReconciler) initReconciler(ctx context.Context, req ctrl.Requ
 	r.addonParams = make(map[string]string)
 	r.DeploymentType = strings.ToLower(r.DeploymentType)
 
-	r.managedOCS = &v1.ManagedOCS{}
+	r.managedOCS = &v1.ManagedFusionDeployment{}
 	r.managedOCS.Name = req.NamespacedName.Name
 	r.managedOCS.Namespace = r.namespace
 

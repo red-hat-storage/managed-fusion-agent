@@ -294,7 +294,7 @@ var _ = BeforeSuite(func() {
 		Expect(k8sClient.Create(ctx, ocsCSV)).ShouldNot(HaveOccurred())
 
 		// Create the ManagedOCS resource
-		managedOCS := &v1.ManagedOCS{}
+		managedOCS := &v1.ManagedFusionDeployment{}
 		managedOCS.Name = managedOCSName
 		managedOCS.Namespace = testPrimaryNamespace
 		Expect(k8sClient.Create(ctx, managedOCS)).ShouldNot(HaveOccurred())
