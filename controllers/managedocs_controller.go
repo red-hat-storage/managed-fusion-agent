@@ -105,6 +105,8 @@ const (
 	providerDeploymentType             = "provider"
 	rhobsRemoteWriteConfigIdSecretKey  = "prom-remote-write-config-id"
 	rhobsRemoteWriteConfigSecretName   = "prom-remote-write-config-secret"
+	prometheusCatalogSourceName        = "prometheus-operator-source"
+	prometheusSubscriptionName         = "downstream-prometheus-operator"
 )
 
 // ManagedOCSReconciler reconciles a ManagedOCS object
@@ -154,6 +156,8 @@ type ManagedOCSReconciler struct {
 	onboardingValidationKeySecret  *corev1.Secret
 	prometheusKubeRBACConfigMap    *corev1.ConfigMap
 	rhobsRemoteWriteConfigSecret   *corev1.Secret
+	prometheusOperatorSubscription *opv1a1.Subscription
+	prometheusOperatorSource       *opv1a1.CatalogSource
 }
 
 // Add necessary rbac permissions for managedocs finalizer in order to set blockOwnerDeletion.
@@ -458,6 +462,14 @@ func (r *ManagedOCSReconciler) initReconciler(ctx context.Context, req ctrl.Requ
 	r.rhobsRemoteWriteConfigSecret = &corev1.Secret{}
 	r.rhobsRemoteWriteConfigSecret.Name = r.RHOBSSecretName
 	r.rhobsRemoteWriteConfigSecret.Namespace = r.namespace
+
+	r.prometheusOperatorSource = &opv1a1.CatalogSource{}
+	r.prometheusOperatorSource.Name = prometheusCatalogSourceName
+	r.prometheusOperatorSource.Namespace = r.namespace
+
+	r.prometheusOperatorSubscription = &opv1a1.Subscription{}
+	r.prometheusOperatorSubscription.Name = prometheusSubscriptionName
+	r.prometheusOperatorSubscription.Namespace = r.namespace
 }
 
 func (r *ManagedOCSReconciler) reconcilePhases() (reconcile.Result, error) {
@@ -494,6 +506,15 @@ func (r *ManagedOCSReconciler) reconcilePhases() (reconcile.Result, error) {
 			}
 		}
 
+		if err := r.reconcilePrometheusOperatorSource(); err != nil {
+			return ctrl.Result{}, err
+		}
+		if err := r.reconcilePrometheusOperatorSubscription(); err != nil {
+			return ctrl.Result{}, err
+		}
+		if err := r.reconcilePrometheusOperatorInstallPlan(); err != nil {
+			return ctrl.Result{}, err
+		}
 		if err := r.reconcilePrometheus(); err != nil {
 			return ctrl.Result{}, err
 		}
@@ -880,6 +901,73 @@ func (r *ManagedOCSReconciler) reconcilePrometheusService() error {
 		return nil
 	})
 	return err
+}
+
+func (r *ManagedOCSReconciler) reconcilePrometheusOperatorSource() error {
+	r.Log.Info("Reconciling Prometheus Operator CatalogSource")
+	_, err := ctrl.CreateOrUpdate(r.ctx, r.Client, r.prometheusOperatorSource, func() error {
+		if err := r.own(r.prometheusOperatorSource); err != nil {
+			return err
+		}
+		desired := templates.PrometheusSource.DeepCopy()
+		r.prometheusOperatorSource.Spec = desired.Spec
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (r *ManagedOCSReconciler) reconcilePrometheusOperatorSubscription() error {
+	r.Log.Info("Reconciling Prometheus Operator Subscription")
+	_, err := ctrl.CreateOrUpdate(r.ctx, r.Client, r.prometheusOperatorSubscription, func() error {
+		if err := r.own(r.prometheusOperatorSubscription); err != nil {
+			return err
+		}
+		desired := templates.PrometheusSubscriptionTemplate.DeepCopy()
+		desired.Spec.CatalogSource = prometheusCatalogSourceName
+		desired.Spec.CatalogSourceNamespace = r.prometheusOperatorSource.Namespace
+		r.prometheusOperatorSubscription.Spec = desired.Spec
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (r *ManagedOCSReconciler) reconcilePrometheusOperatorInstallPlan() error {
+	r.Log.Info("Reconciling Prometheus Operator InstallPlan")
+	prometheusOperatorCSV := &opv1a1.ClusterServiceVersion{}
+	prometheusOperatorCSV.Name = templates.PrometheusCSVName
+	prometheusOperatorCSV.Namespace = r.namespace
+	if err := r.get(prometheusOperatorCSV); err != nil {
+		if errors.IsNotFound(err) {
+			var foundInstallPlan bool
+			installPlans := &opv1a1.InstallPlanList{}
+			if err := r.list(installPlans); err != nil {
+				return err
+			}
+			for i, installPlan := range installPlans.Items {
+				if findInSlice(installPlan.Spec.ClusterServiceVersionNames, prometheusOperatorCSV.Name) {
+					foundInstallPlan = true
+					if installPlan.Spec.Approval == opv1a1.ApprovalManual &&
+						!installPlan.Spec.Approved {
+						installPlans.Items[i].Spec.Approved = true
+						if err := r.update(&installPlans.Items[i]); err != nil {
+							return err
+						}
+					}
+				}
+			}
+			if !foundInstallPlan {
+				return fmt.Errorf("installPlan not found for CSV %s", prometheusOperatorCSV.Name)
+			}
+		}
+		return fmt.Errorf("failed to get Prometheus Operator CSV: %v", err)
+	}
+	return nil
 }
 
 func (r *ManagedOCSReconciler) reconcilePrometheus() error {
@@ -1903,4 +1991,13 @@ func (r *ManagedOCSReconciler) setDeviceSetCount(deviceSet *ocsv1.StorageDeviceS
 		r.Log.V(-1).Info("Requested storage device set count will result in downscaling, which is not supported. Skipping")
 		deviceSet.Count = currDeviceSetCount
 	}
+}
+
+func findInSlice(slice []string, s string) bool {
+	for _, item := range slice {
+		if item == s {
+			return true
+		}
+	}
+	return false
 }
