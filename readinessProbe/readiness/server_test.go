@@ -27,13 +27,7 @@ var _ = Describe("ManagedOCS readiness probe behavior", func() {
 		alertmanagerReady bool,
 	) error {
 
-		var scStatus, prometheusStatus, alertmanagerStatus v1.ComponentState
-
-		if storageClusterReady == true {
-			scStatus = v1.ComponentReady
-		} else {
-			scStatus = v1.ComponentPending
-		}
+		var prometheusStatus, alertmanagerStatus v1.ComponentState
 
 		if prometheusReady == true {
 			prometheusStatus = v1.ComponentReady
@@ -53,9 +47,6 @@ var _ = Describe("ManagedOCS readiness probe behavior", func() {
 
 		managedOCS.Status = v1.ManagedFusionDeploymentStatus{
 			Components: v1.ComponentStatusMap{
-				StorageCluster: v1.ComponentStatus{
-					State: scStatus,
-				},
 				Prometheus: v1.ComponentStatus{
 					State: prometheusStatus,
 				},
@@ -69,16 +60,6 @@ var _ = Describe("ManagedOCS readiness probe behavior", func() {
 	}
 
 	Context("Readiness Probe", func() {
-		When("the managedocs resource lists its StorageCluster as not \"ready\"", func() {
-			It("should cause the readiness probe to return StatusServiceUnavailable", func() {
-				Expect(setupReadinessConditions(false, true, true)).Should(Succeed())
-
-				status, err := utils.ProbeReadiness()
-				Expect(err).ToNot(HaveOccurred())
-				Expect(status).To(Equal(http.StatusServiceUnavailable))
-			})
-		})
-
 		When("managedocs reports Prometheus as not \"ready\"", func() {
 			It("should cause the readiness probe to return StatusServiceUnavailable", func() {
 				Expect(setupReadinessConditions(true, false, true)).Should(Succeed())
