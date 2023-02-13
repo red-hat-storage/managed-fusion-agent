@@ -17,26 +17,22 @@ limitations under the License.
 package main
 
 import (
-	"context"
 	"flag"
-	"fmt"
 	"os"
 
 	"go.uber.org/zap/zapcore"
-	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/types"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/config"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
-	"github.com/go-logr/logr"
 	configv1 "github.com/openshift/api/config/v1"
 	openshiftv1 "github.com/openshift/api/network/v1"
 	operators "github.com/operator-framework/api/pkg/operators/v1alpha1"
@@ -49,16 +45,6 @@ import (
 	v1 "github.com/red-hat-storage/ocs-osd-deployer/api/v1alpha1"
 	"github.com/red-hat-storage/ocs-osd-deployer/controllers"
 	// +kubebuilder:scaffold:imports
-)
-
-const (
-	namespaceEnvVarName          = "NAMESPACE"
-	addonNameEnvVarName          = "ADDON_NAME"
-	sopEndpointEnvVarName        = "SOP_ENDPOINT"
-	alertSMTPFromAddrEnvVarName  = "ALERT_SMTP_FROM_ADDR"
-	deploymentTypeEnvVarName     = "DEPLOYMENT_TYPE"
-	rhobsEndpointEnvVarName      = "RHOBS_ENDPOINT"
-	rhssoTokenEndpointEnvVarName = "RH_SSO_TOKEN_ENDPOINT"
 )
 
 var (
@@ -109,54 +95,40 @@ func main() {
 
 	ctrl.SetLogger(zap.New(zap.UseDevMode(true), zap.StacktraceLevel(zapcore.ErrorLevel)))
 
-	envVars, err := readEnvVars()
-	if err != nil {
-		setupLog.Error(err, "Failed to get environment variables")
-		os.Exit(1)
-	}
-
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme:             scheme,
 		MetricsBindAddress: metricsAddr,
 		Port:               9443,
 		LeaderElection:     enableLeaderElection,
 		LeaderElectionID:   "e0c63ac0.openshift.io",
-		Namespace:          envVars[namespaceEnvVarName],
+		NewCache: cache.BuilderWithOptions(cache.Options{
+			SelectorsByObject: cache.SelectorsByObject{
+				&corev1.Namespace{}: {
+					Label: labels.SelectorFromSet(
+						labels.Set{
+							"managed-by-fusion": "true",
+						},
+					),
+				},
+			},
+		}),
 	})
 	if err != nil {
 		setupLog.Error(err, "Unable to start manager")
 		os.Exit(1)
 	}
 
-	addonName := envVars[addonNameEnvVarName]
 	if err = (&controllers.ManagedOCSReconciler{
 		Client:                       mgr.GetClient(),
 		UnrestrictedClient:           getUnrestrictedClient(),
 		Log:                          ctrl.Log.WithName("controllers").WithName("ManagedOCS"),
 		Scheme:                       mgr.GetScheme(),
-		AddonParamSecretName:         fmt.Sprintf("addon-%v-parameters", addonName),
-		AddonConfigMapName:           addonName,
-		AddonConfigMapDeleteLabelKey: fmt.Sprintf("api.openshift.com/addon-%v-delete", addonName),
-		PagerdutySecretName:          fmt.Sprintf("%v-pagerduty", addonName),
-		DeadMansSnitchSecretName:     fmt.Sprintf("%v-deadmanssnitch", addonName),
-		SMTPSecretName:               fmt.Sprintf("%v-smtp", addonName),
-		SOPEndpoint:                  envVars[sopEndpointEnvVarName],
-		AlertSMTPFrom:                envVars[alertSMTPFromAddrEnvVarName],
-		DeploymentType:               envVars[deploymentTypeEnvVarName],
 		CustomerNotificationHTMLPath: "templates/customernotification.html",
-		RHOBSSecretName:              fmt.Sprintf("%v-prom-remote-write", addonName),
-		RHOBSEndpoint:                envVars[rhobsEndpointEnvVarName],
-		RHSSOTokenEndpoint:           envVars[rhssoTokenEndpointEnvVarName],
-		AvailableCRDs:                mapCRDAvailability(controllers.EgressFirewallCRD, controllers.EgressNetworkPolicyCRD),
 	}).SetupWithManager(mgr, nil); err != nil {
 		setupLog.Error(err, "Unable to create controller", "controller", "ManagedOCS")
 		os.Exit(1)
 	}
 	// +kubebuilder:scaffold:builder
-
-	if err := ensureManagedOCS(mgr.GetClient(), setupLog, envVars); err != nil {
-		os.Exit(1)
-	}
 
 	setupLog.Info("Starting manager")
 	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
@@ -177,76 +149,4 @@ func getUnrestrictedClient() client.Client {
 		os.Exit(1)
 	}
 	return k8sClient
-}
-
-func readEnvVars() (map[string]string, error) {
-	envVars := map[string]string{
-		namespaceEnvVarName:          "",
-		addonNameEnvVarName:          "",
-		sopEndpointEnvVarName:        "",
-		alertSMTPFromAddrEnvVarName:  "",
-		deploymentTypeEnvVarName:     "",
-		rhobsEndpointEnvVarName:      "",
-		rhssoTokenEndpointEnvVarName: "",
-	}
-	for envVarName := range envVars {
-		val, found := os.LookupEnv(envVarName)
-		if !found {
-			return nil, fmt.Errorf("%s environment variable must be set", envVarName)
-		}
-		envVars[envVarName] = val
-	}
-
-	return envVars, nil
-}
-
-func ensureManagedOCS(c client.Client, log logr.Logger, envVars map[string]string) error {
-	err := c.Create(context.Background(), &v1.ManagedFusionDeployment{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:       "managedocs",
-			Namespace:  envVars[namespaceEnvVarName],
-			Finalizers: []string{controllers.ManagedOCSFinalizer},
-		},
-	})
-	if err == nil {
-		log.Info("ManagedOCS resource created")
-		return nil
-
-	} else if errors.IsAlreadyExists(err) {
-		log.Info("ManagedOCS resource already exists")
-		return nil
-
-	} else {
-		log.Error(err, "Unable to create ManagedOCS resource")
-		return err
-	}
-}
-
-func mapCRDAvailability(crdNames ...string) map[string]bool {
-
-	var options client.Options
-	options.Scheme = runtime.NewScheme()
-	utilruntime.Must(apiextensionsv1.AddToScheme(options.Scheme))
-
-	k8sClient, err := client.New(config.GetConfigOrDie(), options)
-	if err != nil {
-		setupLog.Error(err, "error creating client")
-		os.Exit(1)
-	}
-
-	CRDExist := map[string]bool{}
-
-	for _, crdName := range crdNames {
-		crd := apiextensionsv1.CustomResourceDefinition{}
-		err = k8sClient.Get(context.Background(), types.NamespacedName{Name: crdName}, &crd)
-
-		if err != nil && !errors.IsNotFound(err) {
-			setupLog.Error(err, fmt.Sprintf("Error Getting CRD for %s", crdName))
-			os.Exit(1)
-		}
-
-		CRDExist[crdName] = crd.UID != ""
-	}
-
-	return CRDExist
 }
