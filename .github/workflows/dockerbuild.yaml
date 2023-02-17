@@ -13,6 +13,6 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - name: Set up Go environment
-        uses: red-hat-storage/ocs-osd-deployer@main
+        uses: red-hat-storage/managed-fusion-agent@main
       - name: Build operator docker image
         run: make docker-build
