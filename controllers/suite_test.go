@@ -29,14 +29,9 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 	openshiftv1 "github.com/openshift/api/network/v1"
 	opv1a1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
-	ovnv1 "github.com/ovn-org/ovn-kubernetes/go-controller/pkg/crd/egressfirewall/v1"
 	promv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	promv1a1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1alpha1"
-	odfv1a1 "github.com/red-hat-data-services/odf-operator/api/v1alpha1"
-	ocsv1 "github.com/red-hat-storage/ocs-operator/api/v1"
-	ocsv1alpha1 "github.com/red-hat-storage/ocs-operator/api/v1alpha1"
-	v1 "github.com/red-hat-storage/ocs-osd-deployer/api/v1alpha1"
-	"github.com/red-hat-storage/ocs-osd-deployer/templates"
+	"github.com/red-hat-storage/managed-fusion-agent/templates"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -59,7 +54,7 @@ var (
 	cfg            *rest.Config
 	k8sClient      client.Client
 	testEnv        *envtest.Environment
-	testReconciler *ManagedOCSReconciler
+	testReconciler *ManagedFusionDeploymentReconciler
 	ctx            context.Context
 	cancel         context.CancelFunc
 )
@@ -67,7 +62,7 @@ var (
 const (
 	testPrimaryNamespace             = "primary"
 	testSecondaryNamespace           = "secondary"
-	testDeployerCSVName              = "ocs-osd-deployer.x.y.z"
+	testAgentCSVName                 = "managed-fusion-agent.x.y.z"
 	testCustomerNotificationHTMLPath = "../templates/customernotification.html"
 )
 
@@ -82,7 +77,7 @@ var _ = BeforeSuite(func() {
 
 	// write logs from reconciler to a log file
 	var logFile io.Writer
-	logFile, err := os.Create("/tmp/ocs-osd-deployer.log")
+	logFile, err := os.Create("/tmp/managed-fusion-agent.log")
 	Expect(err).ToNot(HaveOccurred())
 
 	go func(logFile io.Writer) {
@@ -111,31 +106,16 @@ var _ = BeforeSuite(func() {
 		Expect(err).ToNot(HaveOccurred())
 		Expect(cfg).ToNot(BeNil())
 
-		err = ocsv1.AddToScheme(scheme.Scheme)
-		Expect(err).NotTo(HaveOccurred())
-
 		err = promv1.AddToScheme(scheme.Scheme)
 		Expect(err).NotTo(HaveOccurred())
 
 		err = promv1a1.AddToScheme(scheme.Scheme)
 		Expect(err).NotTo(HaveOccurred())
 
-		err = v1.AddToScheme(scheme.Scheme)
-		Expect(err).NotTo(HaveOccurred())
-
 		err = opv1a1.AddToScheme(scheme.Scheme)
 		Expect(err).NotTo(HaveOccurred())
 
 		err = openshiftv1.AddToScheme(scheme.Scheme)
-		Expect(err).NotTo(HaveOccurred())
-
-		err = ovnv1.AddToScheme(scheme.Scheme)
-		Expect(err).NotTo(HaveOccurred())
-
-		err = odfv1a1.AddToScheme(scheme.Scheme)
-		Expect(err).NotTo(HaveOccurred())
-
-		err = ocsv1alpha1.AddToScheme(scheme.Scheme)
 		Expect(err).NotTo(HaveOccurred())
 
 		err = configv1.AddToScheme(scheme.Scheme)
@@ -154,10 +134,10 @@ var _ = BeforeSuite(func() {
 		})
 		Expect(err).ToNot(HaveOccurred())
 
-		testReconciler = &ManagedOCSReconciler{
+		testReconciler = &ManagedFusionDeploymentReconciler{
 			Client:                       k8sManager.GetClient(),
 			UnrestrictedClient:           k8sClient,
-			Log:                          ctrl.Log.WithName("controllers").WithName("ManagedOCS"),
+			Log:                          ctrl.Log.WithName("controllers").WithName("ManagedFusionDeployment"),
 			Scheme:                       k8sManager.GetScheme(),
 			CustomerNotificationHTMLPath: testCustomerNotificationHTMLPath,
 		}
@@ -187,11 +167,11 @@ var _ = BeforeSuite(func() {
 		Expect(k8sClient.Create(ctx, secondaryNS)).Should(Succeed())
 
 		// create a mock deplyer CSV
-		deployerCSV := &opv1a1.ClusterServiceVersion{}
-		deployerCSV.Name = testDeployerCSVName
-		deployerCSV.Namespace = testPrimaryNamespace
-		deployerCSV.Spec.InstallStrategy.StrategyName = "test-strategy"
-		deployerCSV.Spec.InstallStrategy.StrategySpec.DeploymentSpecs = []opv1a1.StrategyDeploymentSpec{
+		agentCSV := &opv1a1.ClusterServiceVersion{}
+		agentCSV.Name = testAgentCSVName
+		agentCSV.Namespace = testPrimaryNamespace
+		agentCSV.Spec.InstallStrategy.StrategyName = "test-strategy"
+		agentCSV.Spec.InstallStrategy.StrategySpec.DeploymentSpecs = []opv1a1.StrategyDeploymentSpec{
 			{
 				Name: "ocs-osd-controller-manager",
 				Spec: appsv1.DeploymentSpec{
@@ -214,7 +194,7 @@ var _ = BeforeSuite(func() {
 				},
 			},
 		}
-		Expect(k8sClient.Create(ctx, deployerCSV)).ShouldNot(HaveOccurred())
+		Expect(k8sClient.Create(ctx, agentCSV)).ShouldNot(HaveOccurred())
 
 		// Create a mock install plan
 		prometheusInstallPlan := &opv1a1.InstallPlan{}
