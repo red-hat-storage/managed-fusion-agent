@@ -50,10 +50,10 @@ spec:
 apiVersion: operators.coreos.com/v1alpha1
 kind: ClusterServiceVersion
 metadata:
-  name: ocs-osd-deployer-0.1
+  name: managed-fusion-agent-0.1
   namespace: $NAMESPACE
 spec:
-  displayName: OCS OSD Deployer
+  displayName: Managed Fusion Agent
   install:
     spec:
       deployments:

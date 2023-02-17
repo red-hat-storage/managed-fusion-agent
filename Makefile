@@ -20,7 +20,7 @@ BUNDLE_METADATA_OPTS ?= $(BUNDLE_CHANNELS) $(BUNDLE_DEFAULT_CHANNEL)
 OUTPUT_DIR ?= bundle
 
 # Image URL to use all building/pushing image targets
-IMG ?= ocs-osd-deployer:latest
+IMG ?= managed-fusion-agent:latest
 
 # USE_IMAGE_DIGESTS defines if images are resolved via tags or digests
 USE_IMAGE_DIGESTS ?= false
@@ -141,12 +141,6 @@ awsDataGather: cmd/awsDataGather/main.go pkg/aws/imds_client.go
 .PHONY: export_env_vars
 export_env_vars:
 export NAMESPACE = openshift-storage
-export ADDON_NAME = ocs-converged
-export SOP_ENDPOINT = https://red-hat-storage.github.io/ocs-sop/sop/OSD/{{ .GroupLabels.alertname }}.html
-export ALERT_SMTP_FROM_ADDR = noreply-test@test.com
-export DEPLOYMENT_TYPE = converged
-export RHOBS_ENDPOINT = https://rhobs.com/fake_url
-export RH_SSO_TOKEN_ENDPOINT = https://sso.com/fake_url
 
 .PHONY: run
 run: generate fmt vet manifests export_env_vars ## Run a controller from your host.
@@ -196,10 +190,10 @@ bundle: manifests kustomize operator-sdk ## Generate bundle manifests and metada
 	cd config/aws-data-gather && $(KUSTOMIZE) edit set image controller=$(IMG)
 	cd config/manifests/bases && \
 		rm -rf kustomization.yaml && \
-		$(KUSTOMIZE) create --resources ocs-osd-deployer.clusterserviceversion.yaml && \
+		$(KUSTOMIZE) create --resources managed-fusion-agent.clusterserviceversion.yaml && \
 		$(KUSTOMIZE) edit add annotation --force 'olm.skipRange':">=0.0.1 <$(VERSION)" && \
-		$(KUSTOMIZE) edit add patch --name ocs-osd-deployer.v0.0.0 --kind ClusterServiceVersion \
-		--patch '[{"op": "replace", "path": "/spec/replaces", "value": "ocs-osd-deployer.v$(REPLACES)"}]'
+		$(KUSTOMIZE) edit add patch --name managed-fusion-agent.v0.0.0 --kind ClusterServiceVersion \
+		--patch '[{"op": "replace", "path": "/spec/replaces", "value": "managed-fusion-agent.v$(REPLACES)"}]'
 	$(KUSTOMIZE) build config/manifests | $(OPERATOR_SDK) generate bundle \
 		-q \
 		--extra-service-accounts prometheus-k8s,aws-data-gather \
@@ -207,7 +201,6 @@ bundle: manifests kustomize operator-sdk ## Generate bundle manifests and metada
 		--version $(VERSION) \
 		$(BUNDLE_METADATA_OPTS) \
 		--output-dir=$(OUTPUT_DIR)
-	cp config/metadata/* $(OUTPUT_DIR)/metadata/
 	$(OPERATOR_SDK) bundle validate $(OUTPUT_DIR)
 
 .PHONY: bundle-build
