@@ -1,17 +1,7 @@
 domain: openshift.io
 layout: go.kubebuilder.io/v2
-projectName: ocs-osd-deployer
-repo: github.com/red-hat-storage/ocs-osd-deployer
-resources:
--
-  # TODO(user): Uncomment the below line if this resource implements a controller, else delete it.
-  controller: true
-  domain: openshift.io
-  group: ocs
-  kind: ManagedOCS
-  # TODO(user): Update the package path for your API if the below value is incorrect.
-  path: github.com/red-hat-storage/ocs-osd-deployer/api/v1alpha1
-  version: v1alpha1
+projectName: managed-fusion-agent
+repo: github.com/red-hat-storage/managed-fusion-agent
 version: "3"
 plugins:
   manifests.sdk.operatorframework.io/v2: {}
