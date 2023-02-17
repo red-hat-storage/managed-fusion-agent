@@ -18,7 +18,7 @@ package templates
 
 import (
 	promv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
-	"github.com/red-hat-storage/ocs-osd-deployer/utils"
+	"github.com/red-hat-storage/managed-fusion-agent/utils"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
