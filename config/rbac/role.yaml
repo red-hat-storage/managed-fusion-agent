@@ -8,58 +8,8 @@ rules:
 - apiGroups:
   - ""
   resources:
-  - persistentvolumes
   - secrets
-  verbs:
-  - get
-  - list
-  - watch
-- apiGroups:
-  - ""
-  resources:
-  - services
-  verbs:
-  - create
-  - get
-  - list
-  - update
-  - watch
-- apiGroups:
-  - apiextensions.k8s.io
-  resources:
-  - customresourcedefinitions
-  verbs:
-  - get
-  - list
-  - watch
-- apiGroups:
-  - config.openshift.io
-  resources:
-  - clusterversions
-  verbs:
-  - get
-  - list
-  - watch
-- apiGroups:
-  - storage.k8s.io
-  resources:
-  - storageclass
-  verbs:
-  - get
-  - list
-  - watch
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
-metadata:
-  creationTimestamp: null
-  name: manager-role
-  namespace: system
-rules:
-- apiGroups:
-  - ""
-  resources:
-  - secrets
+  - secrets/finalizers
   verbs:
   - create
   - get
@@ -78,16 +28,6 @@ rules:
   - coordination.k8s.io
   resources:
   - leases
-  verbs:
-  - create
-  - get
-  - list
-  - update
-  - watch
-- apiGroups:
-  - k8s.ovn.org
-  resources:
-  - egressfirewalls
   verbs:
   - create
   - get
@@ -142,30 +82,10 @@ rules:
   - update
   - watch
 - apiGroups:
-  - network.openshift.io
+  - operators.coreos.com
   resources:
-  - egressnetworkpolicies
-  verbs:
-  - create
-  - get
-  - list
-  - update
-  - watch
-- apiGroups:
-  - networking.k8s.io
-  resources:
-  - networkpolicies
-  verbs:
-  - create
-  - get
-  - list
-  - update
-  - watch
-- apiGroups:
-  - ocs.openshift.io
-  resources:
-  - managedocs
-  - managedocs/finalizers
+  - catalogsources
+  - subscriptions
   verbs:
   - create
   - delete
@@ -173,52 +93,6 @@ rules:
   - list
   - patch
   - update
-  - watch
-- apiGroups:
-  - ocs.openshift.io
-  resources:
-  - managedocs/status
-  verbs:
-  - get
-  - patch
-  - update
-- apiGroups:
-  - ocs.openshift.io
-  resources:
-  - ocsinitializations
-  verbs:
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - ocs.openshift.io
-  resources:
-  - storageclusters
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - ocs.openshift.io
-  resources:
-  - storageconsumers
-  verbs:
-  - get
-  - list
-  - watch
-- apiGroups:
-  - odf.openshift.io
-  resources:
-  - storagesystems
-  verbs:
-  - delete
-  - list
   - watch
 - apiGroups:
   - operators.coreos.com
@@ -226,6 +100,16 @@ rules:
   - clusterserviceversions
   verbs:
   - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - operators.coreos.com
+  resources:
+  - installplans
+  verbs:
   - get
   - list
   - patch
