@@ -266,13 +266,9 @@ github.com/prometheus/common/model
 github.com/prometheus/procfs
 github.com/prometheus/procfs/internal/fs
 github.com/prometheus/procfs/internal/util
-# github.com/red-hat-data-services/odf-operator v0.0.0-20220210164358-c9fa5821600f
-## explicit; go 1.16
-github.com/red-hat-data-services/odf-operator/api/v1alpha1
 # github.com/red-hat-storage/ocs-operator v0.4.10
 ## explicit; go 1.16
 github.com/red-hat-storage/ocs-operator/api/v1
-github.com/red-hat-storage/ocs-operator/api/v1alpha1
 # github.com/rook/rook v1.8.3
 ## explicit; go 1.16
 github.com/rook/rook/pkg/apis/ceph.rook.io

@@ -1,4 +1,4 @@
-module github.com/red-hat-storage/ocs-osd-deployer
+module github.com/red-hat-storage/managed-fusion-agent
 
 go 1.17
 
@@ -10,7 +10,6 @@ require (
 	github.com/operator-framework/api v0.10.0
 	github.com/ovn-org/ovn-kubernetes/go-controller v0.0.0-20220816173647-d4b5f1ab78e4
 	github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring v0.53.1
-	github.com/red-hat-data-services/odf-operator v0.0.0-20220210164358-c9fa5821600f
 	github.com/red-hat-storage/ocs-operator v0.4.10
 	github.com/rook/rook v1.8.3
 	go.uber.org/zap v1.19.0

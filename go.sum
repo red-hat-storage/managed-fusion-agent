@@ -138,7 +138,6 @@ github.com/DataDog/datadog-go v2.2.0+incompatible/go.mod h1:LButxg5PwREeZtORoXG3
 github.com/DataDog/datadog-go v3.2.0+incompatible h1:qSG2N4FghB1He/r2mFrWKCaL7dXCilEuNEeAn20fdD4=
 github.com/DataDog/datadog-go v3.2.0+incompatible/go.mod h1:LButxg5PwREeZtORoXG3tL4fMGNddJ+vMq1mwgfaqoQ=
 github.com/DataDog/zstd v1.4.4/go.mod h1:1jcaCB/ufaK+sKp1NBhlGmpz41jOoPQ35bpF36t7BBo=
-github.com/IBM/ibm-storage-odf-operator v1.0.0/go.mod h1:Dchh5Q5Rv2zHoBrpHrN5E2g0DLrA+BKFpAgSQC1+2uE=
 github.com/IBM/keyprotect-go-client v0.5.1/go.mod h1:5TwDM/4FRJq1ZOlwQL1xFahLWQ3TveR88VmL1u3njyI=
 github.com/IBM/keyprotect-go-client v0.7.0/go.mod h1:SVr2ylV/fhSQPDiUjWirN9fsyWFCNNbt8GIT8hPJVjE=
 github.com/Jeffail/gabs v1.1.1 h1:V0uzR08Hj22EX8+8QMhyI9sX2hwRu+/RJhJUmnwda/E=
@@ -336,7 +335,6 @@ github.com/census-instrumentation/opencensus-proto v0.2.1/go.mod h1:f6KPmirojxKA
 github.com/centrify/cloud-golang-sdk v0.0.0-20190214225812-119110094d0f/go.mod h1:C0rtzmGXgN78pYR0tGJFhtHgkbAs0lIbHwkB81VxDQE=
 github.com/ceph/ceph-csi/api v0.0.0-20211006172825-b9beb2106b70/go.mod h1:H15KD1Pe+9+a/zk5IEC+bMZ2A39hwAvqbkt1ncuuQBk=
 github.com/ceph/go-ceph v0.9.1-0.20210607162346-8179bd4437f9/go.mod h1:mafFpf5Vg8Ai8Bd+FAMvKBHLmtdpTXdRP/TNq8XWegY=
-github.com/ceph/go-ceph v0.11.0/go.mod h1:mafFpf5Vg8Ai8Bd+FAMvKBHLmtdpTXdRP/TNq8XWegY=
 github.com/ceph/go-ceph v0.12.0/go.mod h1:mafFpf5Vg8Ai8Bd+FAMvKBHLmtdpTXdRP/TNq8XWegY=
 github.com/certifi/gocertifi v0.0.0-20180905225744-ee1a9a0726d2/go.mod h1:GJKEexRPVJrBSOjoqN5VNOIKJ5Q3RViH6eu3puDRwx4=
 github.com/certifi/gocertifi v0.0.0-20190105021004-abcd57078448/go.mod h1:GJKEexRPVJrBSOjoqN5VNOIKJ5Q3RViH6eu3puDRwx4=
@@ -1786,9 +1784,6 @@ github.com/rafaeljusto/redigomock v0.0.0-20190202135759-257e089e14a1/go.mod h1:J
 github.com/rboyer/safeio v0.2.1 h1:05xhhdRNAdS3apYm7JRjOqngf4xruaW959jmRxGDuSU=
 github.com/rboyer/safeio v0.2.1/go.mod h1:Cq/cEPK+YXFn622lsQ0K4KsPZSPtaptHHEldsy7Fmig=
 github.com/rcrowley/go-metrics v0.0.0-20181016184325-3113b8401b8a/go.mod h1:bCqnVzQkZxMG4s8nGwiZ5l3QUCyqpo9Y+/ZMZ9VjZe4=
-github.com/red-hat-data-services/odf-operator v0.0.0-20220210164358-c9fa5821600f h1:dxZquxsrBwfY358J7VtRzxiFFdhe+YHG5XKOg0aecN8=
-github.com/red-hat-data-services/odf-operator v0.0.0-20220210164358-c9fa5821600f/go.mod h1:LFlQ0cneYTbwGbKfpQz/xVC4qg4xVe1jU3g8aKlZ+KE=
-github.com/red-hat-storage/ocs-operator v0.0.1-master.0.20220110084649-8d36063127c4/go.mod h1:/eQfMEPS34S3LnHEeFwT+nLXn1hoxQz/nSVTAdGfdjc=
 github.com/red-hat-storage/ocs-operator v0.4.10 h1:ZjqpWkM3ip8bE1/WbaCajLsnnIZIQPMhUVhK7hWHRhM=
 github.com/red-hat-storage/ocs-operator v0.4.10/go.mod h1:+ZhlXX3Y4NxtF9kXbwB0mvB/Z1XtTj4ZaCRjqgMleJ4=
 github.com/renier/xmlrpc v0.0.0-20170708154548-ce4a1a486c03 h1:Wdi9nwnhFNAlseAOekn6B5G/+GMtks9UKbvRU/CMM/o=
@@ -1804,7 +1799,6 @@ github.com/rogpeppe/go-internal v1.3.0/go.mod h1:M8bDsm7K2OlrFYOpmOWEs/qY81heoFR
 github.com/rogpeppe/go-internal v1.6.2/go.mod h1:xXDCJY+GAPziupqXw64V24skbSoqbTEfhy4qGm1nDQc=
 github.com/rollbar/rollbar-go v1.0.2/go.mod h1:AcFs5f0I+c71bpHlXNNDbOWJiKwjFDtISeXco0L5PKQ=
 github.com/rook/rook v1.6.5/go.mod h1:IZOQ7MBbjeKX8bDF2aFbofARF0kZwHMNA4DVT1fP4gw=
-github.com/rook/rook v1.7.3/go.mod h1:XvPjDAZxnqebNd1WX8JyR1D9KQFQ5uBHTYkd5x7dTtQ=
 github.com/rook/rook v1.8.3 h1:ejHsaOCWahWckSB98FhcIdiVzDiKH7yoIj3hx4vrq/4=
 github.com/rook/rook v1.8.3/go.mod h1:TsefjcYHRP2JUTyGVAwtGFYqFgI18cfXlAHFkVbRdJM=
 github.com/rs/cors v1.6.0/go.mod h1:gFx+x8UowdsKA9AchylcLynDq+nNFfI8FkUZdN/jGCU=
@@ -2801,7 +2795,6 @@ k8s.io/utils v0.0.0-20190923111123-69764acb6e8e/go.mod h1:sZAwmy6armz5eXlNoLmJcl
 k8s.io/utils v0.0.0-20191114200735-6ca3b61696b6/go.mod h1:sZAwmy6armz5eXlNoLmJcl4F1QuKu7sr+mFQ0byX7Ew=
 k8s.io/utils v0.0.0-20200729134348-d5654de09c73/go.mod h1:jPW/WVKK9YHAvNhRxK0md/EJ228hCsBRufyofKtW8HA=
 k8s.io/utils v0.0.0-20201110183641-67b214c5f920/go.mod h1:jPW/WVKK9YHAvNhRxK0md/EJ228hCsBRufyofKtW8HA=
-k8s.io/utils v0.0.0-20210527160623-6fdb442a123b/go.mod h1:jPW/WVKK9YHAvNhRxK0md/EJ228hCsBRufyofKtW8HA=
 k8s.io/utils v0.0.0-20210722164352-7f3ee0f31471/go.mod h1:jPW/WVKK9YHAvNhRxK0md/EJ228hCsBRufyofKtW8HA=
 k8s.io/utils v0.0.0-20210819203725-bdf08cb9a70a/go.mod h1:jPW/WVKK9YHAvNhRxK0md/EJ228hCsBRufyofKtW8HA=
 k8s.io/utils v0.0.0-20210930125809-cb0fa318a74b/go.mod h1:jPW/WVKK9YHAvNhRxK0md/EJ228hCsBRufyofKtW8HA=
