@@ -11,18 +11,13 @@ RUN go mod download
 
 # Copy the go source
 COPY main.go main.go
-COPY api/ api/
 COPY controllers/ controllers/
 COPY utils/ utils/
 COPY templates/ templates/
-COPY readinessProbe/ readinessProbe/
 COPY cmd/awsDataGather/ awsDataGather/
 
 # Build
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GO111MODULE=on go build -a -o manager main.go
-
-# Build readiness probe binary
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GO111MODULE=on go build -a -o readinessServer readinessProbe/main.go
 
 # Build aws data gathering binary
 # Because the executable is the same name as the directory the source code is in,
@@ -34,7 +29,6 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GO111MODULE=on go build -a -o awsDataG
 FROM gcr.io/distroless/static:nonroot
 WORKDIR /
 COPY --from=builder /workspace/manager .
-COPY --from=builder /workspace/readinessServer .
 COPY --from=builder /workspace/awsDataGather/main awsDataGather
 COPY --from=builder /workspace/templates/customernotification.html /templates/
 USER nonroot:nonroot
