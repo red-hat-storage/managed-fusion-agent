@@ -4,5 +4,5 @@ resources:
 - deployment.yaml
 images:
 - name: controller
-  newName: ocs-osd-deployer
+  newName: managed-fusion-agent
   newTag: latest
