@@ -31,7 +31,6 @@ import (
 	opv1a1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
 	promv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	promv1a1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1alpha1"
-	"github.com/red-hat-storage/managed-fusion-agent/templates"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -139,6 +138,7 @@ var _ = BeforeSuite(func() {
 			UnrestrictedClient:           k8sClient,
 			Log:                          ctrl.Log.WithName("controllers").WithName("ManagedFusionDeployment"),
 			Scheme:                       k8sManager.GetScheme(),
+			Namespace:                    testPrimaryNamespace,
 			CustomerNotificationHTMLPath: testCustomerNotificationHTMLPath,
 		}
 
@@ -196,20 +196,6 @@ var _ = BeforeSuite(func() {
 		}
 		Expect(k8sClient.Create(ctx, agentCSV)).ShouldNot(HaveOccurred())
 
-		// Create a mock install plan
-		prometheusInstallPlan := &opv1a1.InstallPlan{}
-		prometheusInstallPlan.Name = "test-install-plan"
-		prometheusInstallPlan.Namespace = testPrimaryNamespace
-		prometheusInstallPlan.Spec = getMockPrometheusInstallPlanSpec()
-		Expect(k8sClient.Create(ctx, prometheusInstallPlan)).ShouldNot(HaveOccurred())
-
-		prometheusCSV := &opv1a1.ClusterServiceVersion{}
-		prometheusCSV.Name = templates.PrometheusCSVName
-		prometheusCSV.Namespace = testPrimaryNamespace
-		prometheusCSV.Spec.InstallStrategy.StrategyName = "test-strategy"
-		prometheusCSV.Spec.InstallStrategy.StrategySpec.DeploymentSpecs = getMockPrometheusCSVDeploymentSpec()
-		Expect(k8sClient.Create(ctx, prometheusCSV)).ShouldNot(HaveOccurred())
-
 		close(done)
 	}(logFile)
 	Eventually(done, 60).Should(BeClosed())
@@ -222,41 +208,3 @@ var _ = AfterSuite(func() {
 	Expect(err).ToNot(HaveOccurred())
 	GinkgoWriter.ClearTeeWriters()
 })
-
-func getMockPrometheusInstallPlanSpec() opv1a1.InstallPlanSpec {
-	return opv1a1.InstallPlanSpec{
-		CatalogSource:          prometheusCatalogSourceName,
-		CatalogSourceNamespace: testPrimaryNamespace,
-		ClusterServiceVersionNames: []string{
-			templates.PrometheusCSVName,
-		},
-		Approval: opv1a1.ApprovalManual,
-		Approved: false,
-	}
-}
-
-func getMockPrometheusCSVDeploymentSpec() []opv1a1.StrategyDeploymentSpec {
-	deploymentSpec := []opv1a1.StrategyDeploymentSpec{
-		{
-			Name: "prometheus-operator",
-			Spec: appsv1.DeploymentSpec{
-				Selector: &metav1.LabelSelector{
-					MatchLabels: map[string]string{"prometheus-operator": "deployment"},
-				},
-				Template: corev1.PodTemplateSpec{
-					ObjectMeta: metav1.ObjectMeta{
-						Labels: map[string]string{"prometheus-operator": "deployment"},
-					},
-					Spec: corev1.PodSpec{
-						Containers: []corev1.Container{
-							{
-								Name: "prometheus-operator",
-							},
-						},
-					},
-				},
-			},
-		},
-	}
-	return deploymentSpec
-}
