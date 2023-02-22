@@ -173,14 +173,14 @@ var _ = BeforeSuite(func() {
 		agentCSV.Spec.InstallStrategy.StrategyName = "test-strategy"
 		agentCSV.Spec.InstallStrategy.StrategySpec.DeploymentSpecs = []opv1a1.StrategyDeploymentSpec{
 			{
-				Name: "ocs-osd-controller-manager",
+				Name: "managed-fusion-controller-manager",
 				Spec: appsv1.DeploymentSpec{
 					Selector: &metav1.LabelSelector{
-						MatchLabels: map[string]string{"app": "managedocs"},
+						MatchLabels: map[string]string{"app": "managed-fusion-agent"},
 					},
 					Template: corev1.PodTemplateSpec{
 						ObjectMeta: metav1.ObjectMeta{
-							Labels: map[string]string{"app": "managedocs"},
+							Labels: map[string]string{"app": "managed-fusion-agent"},
 						},
 						Spec: corev1.PodSpec{
 							Containers: []corev1.Container{
