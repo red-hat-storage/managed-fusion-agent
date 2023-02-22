@@ -119,7 +119,6 @@ var _ = Describe("ManagedFusionDeployment controller", func() {
 		} else {
 			Expect(k8sClient.Create(ctx, managedFusionAgentSecret)).Should(Succeed())
 		}
-		k8sClient.Get(ctx, utils.GetResourceKey(managedFusionAgentSecret), managedFusionAgentSecret)
 	}
 
 	Context("reconcile()", Ordered, func() {

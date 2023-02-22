@@ -521,12 +521,3 @@ func (r *ManagedFusionDeploymentReconciler) getCSVByPrefix(name string) (*opv1a1
 	}
 	return nil, errors.NewNotFound(opv1a1.Resource("csv"), fmt.Sprintf("unable to find a csv prefixed with %s", name))
 }
-
-func findInSlice(slice []string, s string) bool {
-	for _, item := range slice {
-		if item == s {
-			return true
-		}
-	}
-	return false
-}
