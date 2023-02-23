@@ -35,6 +35,26 @@ rules:
   - update
   - watch
 - apiGroups:
+  - misf.ibm.com
+  resources:
+  - managedfusionofferings
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - misf.ibm.com
+  resources:
+  - managedfusionofferings/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
   - monitoring.coreos.com
   resources:
   - alertmanagerconfigs

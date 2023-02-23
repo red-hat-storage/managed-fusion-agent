@@ -1,0 +1,6 @@
+apiVersion: misf.ibm.com/v1alpha1
+kind: ManagedFusionOffering
+metadata:
+  name: managedfusionoffering-sample
+spec:
+  # TODO(user): Add fields here

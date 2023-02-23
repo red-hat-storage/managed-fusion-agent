@@ -37,6 +37,8 @@ import (
 	operators "github.com/operator-framework/api/pkg/operators/v1alpha1"
 	promv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	promv1a1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1alpha1"
+
+	misfv1alpha1 "github.com/red-hat-storage/managed-fusion-agent/api/v1alpha1"
 	"github.com/red-hat-storage/managed-fusion-agent/controllers"
 	// +kubebuilder:scaffold:imports
 )
@@ -67,6 +69,7 @@ func addAllSchemes(scheme *runtime.Scheme) {
 	utilruntime.Must(openshiftv1.AddToScheme(scheme))
 
 	utilruntime.Must(configv1.AddToScheme(scheme))
+	utilruntime.Must(misfv1alpha1.AddToScheme(scheme))
 	// +kubebuilder:scaffold:scheme
 }
 
@@ -108,6 +111,15 @@ func main() {
 		CustomerNotificationHTMLPath: "templates/customernotification.html",
 	}).SetupWithManager(mgr, nil); err != nil {
 		setupLog.Error(err, "Unable to create controller", "controller", "ManagedFusionDeployment")
+		os.Exit(1)
+	}
+
+	if err = (&controllers.ManagedFusionOfferingReconciler{
+		Client: mgr.GetClient(),
+		Log:    ctrl.Log.WithName("controllers").WithName("ManagedFusionOffering"),
+		Scheme: mgr.GetScheme(),
+	}).SetupWithManager(mgr, nil); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "ManagedFusionOffering")
 		os.Exit(1)
 	}
 	// +kubebuilder:scaffold:builder
