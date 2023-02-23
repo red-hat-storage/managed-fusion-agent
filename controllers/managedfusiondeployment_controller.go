@@ -24,20 +24,15 @@ import (
 
 	opv1a1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
 	"gopkg.in/yaml.v2"
-	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	controller "sigs.k8s.io/controller-runtime/pkg/controller"
-	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	"github.com/go-logr/logr"
 	promv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
@@ -67,9 +62,9 @@ type ManagedFusionDeploymentReconciler struct {
 	UnrestrictedClient client.Client
 	Log                logr.Logger
 	Scheme             *runtime.Scheme
+	Namespace          string
 
 	ctx                           context.Context
-	Namespace                     string
 	prometheus                    *promv1.Prometheus
 	alertmanager                  *promv1.Alertmanager
 	alertmanagerConfig            *promv1a1.AlertmanagerConfig
@@ -97,57 +92,33 @@ func (r *ManagedFusionDeploymentReconciler) SetupWithManager(mgr ctrl.Manager, c
 			MaxConcurrentReconciles: 1,
 		}
 	}
-	managedFusionDeploymentSecretPredicates := builder.WithPredicates(
-		predicate.NewPredicateFuncs(
-			func(client client.Object) bool {
-				name := client.GetName()
-				return name == managedFusionAgentSecretName
-			},
-		),
-	)
-	monStatefulSetPredicates := builder.WithPredicates(
-		predicate.NewPredicateFuncs(
-			func(client client.Object) bool {
-				name := client.GetName()
-				return name == fmt.Sprintf("prometheus-%s", prometheusName) ||
-					name == fmt.Sprintf("alertmanager-%s", alertmanagerName)
-			},
-		),
-	)
-	namespacePredicate := builder.WithPredicates(
-		predicate.NewPredicateFuncs(
-			func(object client.Object) bool {
-				namespace := object.GetNamespace()
-				return namespace == r.Namespace
-			},
-		),
-	)
-	enqueueManangedFusionDeploymentRequest := handler.EnqueueRequestsFromMapFunc(
-		func(client client.Object) []reconcile.Request {
-			return []reconcile.Request{{
-				NamespacedName: types.NamespacedName{
-					Name:      managedFusionAgentSecretName,
-					Namespace: client.GetNamespace(),
-				},
-			}}
+	// Filter the events for objects that are not owned by managed-fusion-agent-config secret
+	filterNonOwnedEvents := predicate.NewPredicateFuncs(
+		func(object client.Object) bool {
+			if object.GetName() == managedFusionAgentSecretName &&
+				object.GetNamespace() == r.Namespace {
+				return true
+			} else {
+				for _, owner := range object.GetOwnerReferences() {
+					if owner.Kind == "Secret" &&
+						owner.Name == managedFusionAgentSecretName {
+						return true
+					}
+				}
+			}
+			return false
 		},
 	)
 
 	return ctrl.NewControllerManagedBy(mgr).
 		WithOptions(*ctrlOptions).
-		For(&corev1.Secret{}, managedFusionDeploymentSecretPredicates, namespacePredicate).
+		For(&corev1.Secret{}).
 		// Watch owned resources
-		Owns(&promv1.Prometheus{}, namespacePredicate).
-		Owns(&promv1.Alertmanager{}, namespacePredicate).
-		Owns(&corev1.Secret{}, namespacePredicate).
-		Owns(&promv1a1.AlertmanagerConfig{}, namespacePredicate).
-		// Watch non-owned resources
-		Watches(
-			&source.Kind{Type: &appsv1.StatefulSet{}},
-			enqueueManangedFusionDeploymentRequest,
-			monStatefulSetPredicates,
-			namespacePredicate,
-		).
+		Owns(&promv1.Prometheus{}).
+		Owns(&promv1.Alertmanager{}).
+		Owns(&corev1.Secret{}).
+		Owns(&promv1a1.AlertmanagerConfig{}).
+		WithEventFilter(filterNonOwnedEvents).
 		Complete(r)
 }
 
