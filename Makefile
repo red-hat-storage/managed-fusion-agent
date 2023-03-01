@@ -83,7 +83,7 @@ endif
 # ===== Make targets ===== #
 
 .PHONY: all
-all: manager readinessServer awsDataGather
+all: manager awsDataGather
 
 ##@ General
 
@@ -129,10 +129,6 @@ test: manifests generate fmt vet envtest ## Run tests.
 .PHONY: manager
 manager: generate fmt vet ## Build manager binary.
 	go build -o bin/manager main.go
-
-.PHONY: readinessServer
-readinessServer: fmt vet ## Build readiness probe binary.
-	go build -o bin/readinessServer readinessProbe/main.go
 
 .PHONY: awsDataGather
 awsDataGather: cmd/awsDataGather/main.go pkg/aws/imds_client.go
