@@ -357,7 +357,7 @@ func (r *ManagedFusionDeployment) reconcilePrometheus() error {
 		var deployerCSVDeployment *opv1a1.StrategyDeploymentSpec = nil
 		for key := range deployerCSVDeployments {
 			deployment := &deployerCSVDeployments[key]
-			if deployment.Name == "ocs-osd-controller-manager" {
+			if deployment.Name == "managed-fusion-controller-manager" {
 				deployerCSVDeployment = deployment
 			}
 		}

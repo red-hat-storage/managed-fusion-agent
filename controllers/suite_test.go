@@ -183,7 +183,7 @@ var _ = BeforeSuite(func() {
 		agentCSV.Spec.InstallStrategy.StrategyName = "test-strategy"
 		agentCSV.Spec.InstallStrategy.StrategySpec.DeploymentSpecs = []opv1a1.StrategyDeploymentSpec{
 			{
-				Name: "managed-fusion-agent-controller-manager",
+				Name: "managed-fusion-controller-manager",
 				Spec: appsv1.DeploymentSpec{
 					Selector: &metav1.LabelSelector{
 						MatchLabels: map[string]string{"app": "managed-fusion-agent"},
