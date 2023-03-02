@@ -18,7 +18,6 @@ package main
 
 import (
 	"flag"
-	"fmt"
 	"os"
 
 	"go.uber.org/zap/zapcore"
@@ -92,22 +91,21 @@ func main() {
 		setupLog.Error(err, "Unable to start manager")
 		os.Exit(1)
 	}
-
-	namespace, err := readNamespaceEnvVars()
-	if err != nil {
-		setupLog.Error(err, "Failed to get environment variables")
+	namespace, found := os.LookupEnv("NAMESPACE")
+	if !found {
+		setupLog.Error(err, "Failed to get 'NAMESPACE' environment variable")
 		os.Exit(1)
 	}
 
-	if err = (&controllers.ManagedFusionDeploymentReconciler{
+	if err = (&controllers.ManagedFusionDeployment{
 		Client:                       mgr.GetClient(),
 		UnrestrictedClient:           getUnrestrictedClient(),
-		Log:                          ctrl.Log.WithName("controllers").WithName("ManagedFusionDeployment"),
+		Log:                          ctrl.Log.WithName("controllers").WithName("ManagedFusion"),
 		Scheme:                       mgr.GetScheme(),
 		Namespace:                    namespace,
 		CustomerNotificationHTMLPath: "templates/customernotification.html",
 	}).SetupWithManager(mgr, nil); err != nil {
-		setupLog.Error(err, "Unable to create controller", "controller", "ManagedFusionDeployment")
+		setupLog.Error(err, "Unable to create controller", "controller", "ManagedFusion")
 		os.Exit(1)
 	}
 	// +kubebuilder:scaffold:builder
@@ -131,12 +129,4 @@ func getUnrestrictedClient() client.Client {
 		os.Exit(1)
 	}
 	return k8sClient
-}
-
-func readNamespaceEnvVars() (string, error) {
-	val, found := os.LookupEnv("NAMESPACE")
-	if !found {
-		return "", fmt.Errorf("NAMESPACE environment variable must be set")
-	}
-	return val, nil
 }

@@ -31,6 +31,7 @@ import (
 	opv1a1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
 	promv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	promv1a1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1alpha1"
+	"github.com/red-hat-storage/managed-fusion-agent/utils"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -53,7 +54,7 @@ var (
 	cfg            *rest.Config
 	k8sClient      client.Client
 	testEnv        *envtest.Environment
-	testReconciler *ManagedFusionDeploymentReconciler
+	testReconciler *ManagedFusionDeployment
 	ctx            context.Context
 	cancel         context.CancelFunc
 )
@@ -133,10 +134,10 @@ var _ = BeforeSuite(func() {
 		})
 		Expect(err).ToNot(HaveOccurred())
 
-		testReconciler = &ManagedFusionDeploymentReconciler{
+		testReconciler = &ManagedFusionDeployment{
 			Client:                       k8sManager.GetClient(),
 			UnrestrictedClient:           k8sClient,
-			Log:                          ctrl.Log.WithName("controllers").WithName("ManagedFusionDeployment"),
+			Log:                          ctrl.Log.WithName("controllers").WithName("ManagedFusion"),
 			Scheme:                       k8sManager.GetScheme(),
 			Namespace:                    testPrimaryNamespace,
 			CustomerNotificationHTMLPath: testCustomerNotificationHTMLPath,
@@ -166,6 +167,15 @@ var _ = BeforeSuite(func() {
 		secondaryNS.Name = testSecondaryNamespace
 		Expect(k8sClient.Create(ctx, secondaryNS)).Should(Succeed())
 
+		// Create the aws data config map
+		awsConfigMap := &corev1.ConfigMap{}
+		awsConfigMap.Name = utils.IMDSConfigMapName
+		awsConfigMap.Namespace = testPrimaryNamespace
+		awsConfigMap.Data = map[string]string{
+			utils.CIDRKey: "10.0.0.0/16",
+		}
+
+		Expect(k8sClient.Create(ctx, awsConfigMap)).ShouldNot(HaveOccurred())
 		// create a mock deplyer CSV
 		agentCSV := &opv1a1.ClusterServiceVersion{}
 		agentCSV.Name = testAgentCSVName
@@ -173,7 +183,7 @@ var _ = BeforeSuite(func() {
 		agentCSV.Spec.InstallStrategy.StrategyName = "test-strategy"
 		agentCSV.Spec.InstallStrategy.StrategySpec.DeploymentSpecs = []opv1a1.StrategyDeploymentSpec{
 			{
-				Name: "managed-fusion-controller-manager",
+				Name: "managed-fusion-agent-controller-manager",
 				Spec: appsv1.DeploymentSpec{
 					Selector: &metav1.LabelSelector{
 						MatchLabels: map[string]string{"app": "managed-fusion-agent"},
@@ -195,7 +205,11 @@ var _ = BeforeSuite(func() {
 			},
 		}
 		Expect(k8sClient.Create(ctx, agentCSV)).ShouldNot(HaveOccurred())
-
+		//create a mock clusterversion
+		clusterVersion := &configv1.ClusterVersion{}
+		clusterVersion.Name = "version"
+		clusterVersion.Spec.ClusterID = "dummy-cluster-id"
+		Expect(k8sClient.Create(ctx, clusterVersion)).ShouldNot(HaveOccurred())
 		close(done)
 	}(logFile)
 	Eventually(done, 60).Should(BeClosed())

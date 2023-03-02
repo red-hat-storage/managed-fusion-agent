@@ -28,7 +28,7 @@ var _ = Describe("ManagedFusionDeployment controller", func() {
 	ctx := context.Background()
 	managedFusionAgentSecretTemplate := corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      managedFusionAgentSecretName,
+			Name:      managedFusionSecretName,
 			Namespace: testPrimaryNamespace,
 		},
 		Data: map[string][]byte{},
@@ -53,7 +53,7 @@ var _ = Describe("ManagedFusionDeployment controller", func() {
 	}
 	amConfigSecretTemplate := corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      alertmanagerConfigSecretName,
+			Name:      alertmanagerSecretName,
 			Namespace: testPrimaryNamespace,
 		},
 	}
@@ -84,9 +84,9 @@ var _ = Describe("ManagedFusionDeployment controller", func() {
 		}
 		pagerDutyData := pagerDutyConfig{}
 		if hasPagerKey {
-			pagerDutyData.SecretKey = "test-key"
+			pagerDutyData.ServiceKey = "test-key"
 		} else {
-			pagerDutyData.SecretKey = ""
+			pagerDutyData.ServiceKey = ""
 		}
 		if hasPagerConfig {
 			pagerDutyData.SOPEndpoint = "https://red-hat-storage.github.io/ocs-sop/sop/OSD"
@@ -111,9 +111,9 @@ var _ = Describe("ManagedFusionDeployment controller", func() {
 			smtpData.NotificationEmails = []string{}
 		}
 		pdYAMLData, _ := yaml.Marshal(&pagerDutyData)
-		managedFusionAgentSecret.Data[managedFusionAgentSecretPagerDutyKey] = pdYAMLData
+		managedFusionAgentSecret.Data["pager_duty_config"] = pdYAMLData
 		smtpYAMLData, _ := yaml.Marshal(&smtpData)
-		managedFusionAgentSecret.Data[managedFusionAgentSecretSMTPKey] = smtpYAMLData
+		managedFusionAgentSecret.Data["smtp_config"] = smtpYAMLData
 		if managedFusionAgentSecretExists {
 			Expect(k8sClient.Update(ctx, managedFusionAgentSecret)).Should(Succeed())
 		} else {
@@ -225,21 +225,19 @@ var _ = Describe("ManagedFusionDeployment controller", func() {
 				utils.EnsureNoResource(k8sClient, ctx, amConfigSecretTemplate.DeepCopy(), timeout, interval)
 			})
 		})
-		When("there is no pagerduty config in the managedFusionDeployment CR", func() {
+		When("there is no pagerduty config in the managedFusion secret", func() {
 			It("should not create alertmanager config", func() {
 				setupAlertmanagerConfigConditions(false, true, true, true)
 
 				// Ensure, over a period of time, that the resources are not created
-				utils.WaitForResource(k8sClient, ctx, amConfigSecretTemplate.DeepCopy(), timeout, interval)
 				utils.EnsureNoResource(k8sClient, ctx, amConfigTemplate.DeepCopy(), timeout, interval)
 			})
 		})
-		When("there is no smtp config in the managedFusionDeployment CR", func() {
+		When("there is no smtp config in the managedFusion secret", func() {
 			It("should not create alertmanager config", func() {
 				setupAlertmanagerConfigConditions(true, false, true, true)
 
 				// Ensure, over a period of time, that the resources are not created
-				utils.WaitForResource(k8sClient, ctx, amConfigSecretTemplate.DeepCopy(), timeout, interval)
 				utils.EnsureNoResource(k8sClient, ctx, amConfigTemplate.DeepCopy(), timeout, interval)
 
 			})
@@ -267,13 +265,13 @@ var _ = Describe("ManagedFusionDeployment controller", func() {
 					Password:           "test-key",
 				}
 				smtpYAMLData, _ := yaml.Marshal(&smtpData)
-				agentSecret.Data[managedFusionAgentSecretSMTPKey] = smtpYAMLData
+				agentSecret.Data["smtp_config"] = smtpYAMLData
 				pagerDutyData := pagerDutyConfig{
 					SOPEndpoint: "https://red-hat-storage.github.io/ocs-sop/sop/OSD",
-					SecretKey:   "test-key",
+					ServiceKey:  "test-key",
 				}
 				pagerDutyYAMLData, _ := yaml.Marshal(&pagerDutyData)
-				agentSecret.Data[managedFusionAgentSecretPagerDutyKey] = pagerDutyYAMLData
+				agentSecret.Data["pager_duty_config"] = pagerDutyYAMLData
 				Expect(k8sClient.Update(ctx, agentSecret)).Should(Succeed())
 
 				// Wait for alertmanager to get updated with smtp details
@@ -290,7 +288,7 @@ var _ = Describe("ManagedFusionDeployment controller", func() {
 				)
 			})
 		})
-		When("second notification email addresses is added in add-on parameter", func() {
+		When("second notification email addresses is added in managedFusion secret", func() {
 			It("should update alertmanager config with the added notification email id", func() {
 				agentSecret := managedFusionAgentSecretTemplate.DeepCopy()
 				agentSecretKey := utils.GetResourceKey(agentSecret)
@@ -305,13 +303,13 @@ var _ = Describe("ManagedFusionDeployment controller", func() {
 					Password:           "test-key",
 				}
 				smtpYAMLData, _ := yaml.Marshal(&smtpData)
-				agentSecret.Data[managedFusionAgentSecretSMTPKey] = smtpYAMLData
+				agentSecret.Data["smtp_config"] = smtpYAMLData
 				pagerDutyData := pagerDutyConfig{
 					SOPEndpoint: "https://red-hat-storage.github.io/ocs-sop/sop/OSD",
-					SecretKey:   "test-key",
+					ServiceKey:  "test-key",
 				}
 				pagerDutyYAMLData, _ := yaml.Marshal(&pagerDutyData)
-				agentSecret.Data[managedFusionAgentSecretPagerDutyKey] = pagerDutyYAMLData
+				agentSecret.Data["pager_duty_config"] = pagerDutyYAMLData
 				Expect(k8sClient.Update(ctx, agentSecret)).Should(Succeed())
 
 				// Wait for alertmanager to get updated with smtp details
@@ -328,7 +326,7 @@ var _ = Describe("ManagedFusionDeployment controller", func() {
 				)
 			})
 		})
-		When("second notification email address in the add-on parameter is removed", func() {
+		When("second notification email address in the managedFusion secret is removed", func() {
 			It("should update alertmanager config by removing the second email address", func() {
 				agentSecret := managedFusionAgentSecretTemplate.DeepCopy()
 				agentSecretKey := utils.GetResourceKey(agentSecret)
@@ -343,13 +341,13 @@ var _ = Describe("ManagedFusionDeployment controller", func() {
 					Password:           "test-key",
 				}
 				smtpYAMLData, _ := yaml.Marshal(&smtpData)
-				agentSecret.Data[managedFusionAgentSecretSMTPKey] = smtpYAMLData
+				agentSecret.Data["smtp_config"] = smtpYAMLData
 				pagerDutyData := pagerDutyConfig{
 					SOPEndpoint: "https://red-hat-storage.github.io/ocs-sop/sop/OSD",
-					SecretKey:   "test-key",
+					ServiceKey:  "test-key",
 				}
 				pagerDutyYAMLData, _ := yaml.Marshal(&pagerDutyData)
-				agentSecret.Data[managedFusionAgentSecretPagerDutyKey] = pagerDutyYAMLData
+				agentSecret.Data["pager_duty_config"] = pagerDutyYAMLData
 				Expect(k8sClient.Update(ctx, agentSecret)).Should(Succeed())
 
 				// Wait for alertmanager to get updated with smtp details
@@ -366,7 +364,7 @@ var _ = Describe("ManagedFusionDeployment controller", func() {
 				)
 			})
 		})
-		When("there is no notification email address in the add-on parameter", func() {
+		When("there is no notification email address in the managedFusion secret", func() {
 			It("should update alertmanager config by removing the SMTP email configs", func() {
 				agentSecret := managedFusionAgentSecretTemplate.DeepCopy()
 				agentSecretKey := utils.GetResourceKey(agentSecret)
@@ -381,13 +379,13 @@ var _ = Describe("ManagedFusionDeployment controller", func() {
 					Password:           "test-key",
 				}
 				smtpYAMLData, _ := yaml.Marshal(&smtpData)
-				agentSecret.Data[managedFusionAgentSecretSMTPKey] = smtpYAMLData
+				agentSecret.Data["smtp_config"] = smtpYAMLData
 				pagerDutyData := pagerDutyConfig{
 					SOPEndpoint: "https://red-hat-storage.github.io/ocs-sop/sop/OSD",
-					SecretKey:   "test-key",
+					ServiceKey:  "test-key",
 				}
 				pagerDutyYAMLData, _ := yaml.Marshal(&pagerDutyData)
-				agentSecret.Data[managedFusionAgentSecretPagerDutyKey] = pagerDutyYAMLData
+				agentSecret.Data["pager_duty_config"] = pagerDutyYAMLData
 				Expect(k8sClient.Update(ctx, agentSecret)).Should(Succeed())
 
 				// Wait for alertmanager to remove the email configs
@@ -405,7 +403,7 @@ var _ = Describe("ManagedFusionDeployment controller", func() {
 			})
 		})
 		When("All uninstall conditions are met", func() {
-			It("should delete the ManagedFusionDeployment secret", func() {
+			It("should delete the managedFusion secret", func() {
 				Expect(k8sClient.Delete(ctx, managedFusionAgentSecretTemplate.DeepCopy())).Should(Succeed())
 
 				agentSecret := managedFusionAgentSecretTemplate.DeepCopy()
