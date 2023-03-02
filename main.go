@@ -18,6 +18,7 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"os"
 
 	"go.uber.org/zap/zapcore"
@@ -92,11 +93,18 @@ func main() {
 		os.Exit(1)
 	}
 
+	namespace, err := readNamespaceEnvVars()
+	if err != nil {
+		setupLog.Error(err, "Failed to get environment variables")
+		os.Exit(1)
+	}
+
 	if err = (&controllers.ManagedFusionDeploymentReconciler{
 		Client:                       mgr.GetClient(),
 		UnrestrictedClient:           getUnrestrictedClient(),
 		Log:                          ctrl.Log.WithName("controllers").WithName("ManagedFusionDeployment"),
 		Scheme:                       mgr.GetScheme(),
+		Namespace:                    namespace,
 		CustomerNotificationHTMLPath: "templates/customernotification.html",
 	}).SetupWithManager(mgr, nil); err != nil {
 		setupLog.Error(err, "Unable to create controller", "controller", "ManagedFusionDeployment")
@@ -123,4 +131,12 @@ func getUnrestrictedClient() client.Client {
 		os.Exit(1)
 	}
 	return k8sClient
+}
+
+func readNamespaceEnvVars() (string, error) {
+	val, found := os.LookupEnv("NAMESPACE")
+	if !found {
+		return "", fmt.Errorf("NAMESPACE environment variable must be set")
+	}
+	return val, nil
 }

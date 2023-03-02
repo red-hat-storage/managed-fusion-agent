@@ -2,7 +2,6 @@ package controllers
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -140,7 +139,7 @@ var _ = Describe("ManagedFusionDeployment controller", func() {
 				utils.EnsureNoResources(k8sClient, ctx, resList, timeout, interval)
 			})
 		})
-		When("there is a valid managedFusionDeployment CR in the cluster", func() {
+		When("there is a valid managedFusionAgent Secret in the cluster", func() {
 			It("should create reconciled resources", func() {
 				// Create a valid add-on parameters secret
 				agentSecret := managedFusionAgentSecretTemplate.DeepCopy()
@@ -308,14 +307,12 @@ var _ = Describe("ManagedFusionDeployment controller", func() {
 				}
 				smtpYAMLData, _ := yaml.Marshal(&smtpData)
 				agentSecret.Data[managedFusionAgentSecretSMTPKey] = smtpYAMLData
-				fmt.Println(smtpYAMLData)
 				pagerDutyData := pagerDutyConfig{
 					SOPEndpoint: "https://red-hat-storage.github.io/ocs-sop/sop/OSD",
 					SecretKey:   "test-key",
 				}
 				pagerDutyYAMLData, _ := yaml.Marshal(&pagerDutyData)
 				agentSecret.Data[managedFusionAgentSecretPagerDutyKey] = pagerDutyYAMLData
-				fmt.Println(pagerDutyYAMLData)
 				Expect(k8sClient.Update(ctx, agentSecret)).Should(Succeed())
 
 				// Wait for alertmanager to get updated with smtp details
@@ -348,14 +345,12 @@ var _ = Describe("ManagedFusionDeployment controller", func() {
 				}
 				smtpYAMLData, _ := yaml.Marshal(&smtpData)
 				agentSecret.Data[managedFusionAgentSecretSMTPKey] = smtpYAMLData
-				fmt.Println(smtpYAMLData)
 				pagerDutyData := pagerDutyConfig{
 					SOPEndpoint: "https://red-hat-storage.github.io/ocs-sop/sop/OSD",
 					SecretKey:   "test-key",
 				}
 				pagerDutyYAMLData, _ := yaml.Marshal(&pagerDutyData)
 				agentSecret.Data[managedFusionAgentSecretPagerDutyKey] = pagerDutyYAMLData
-				fmt.Println(pagerDutyYAMLData)
 				Expect(k8sClient.Update(ctx, agentSecret)).Should(Succeed())
 
 				// Wait for alertmanager to get updated with smtp details
@@ -388,14 +383,12 @@ var _ = Describe("ManagedFusionDeployment controller", func() {
 				}
 				smtpYAMLData, _ := yaml.Marshal(&smtpData)
 				agentSecret.Data[managedFusionAgentSecretSMTPKey] = smtpYAMLData
-				fmt.Println(smtpYAMLData)
 				pagerDutyData := pagerDutyConfig{
 					SOPEndpoint: "https://red-hat-storage.github.io/ocs-sop/sop/OSD",
 					SecretKey:   "test-key",
 				}
 				pagerDutyYAMLData, _ := yaml.Marshal(&pagerDutyData)
 				agentSecret.Data[managedFusionAgentSecretPagerDutyKey] = pagerDutyYAMLData
-				fmt.Println(pagerDutyYAMLData)
 				Expect(k8sClient.Update(ctx, agentSecret)).Should(Succeed())
 
 				// Wait for alertmanager to remove the email configs
