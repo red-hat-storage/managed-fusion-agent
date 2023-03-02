@@ -32,8 +32,6 @@ import (
 
 	"net/http"
 
-	v1 "github.com/red-hat-storage/ocs-osd-deployer/api/v1alpha1"
-
 	"github.com/go-logr/logr"
 	// +kubebuilder:scaffold:imports
 )
@@ -69,7 +67,6 @@ var _ = BeforeSuite(func() {
 
 		options.Scheme = runtime.NewScheme()
 		utilruntime.Must(clientgoscheme.AddToScheme(options.Scheme))
-		utilruntime.Must(v1.AddToScheme(options.Scheme))
 
 		// Client to be use by the test code, using a non cached client
 		k8sClient, err = client.New(cfg, options)

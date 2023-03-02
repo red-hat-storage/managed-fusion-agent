@@ -19,8 +19,8 @@ package templates
 import (
 	"fmt"
 
+	"github.com/red-hat-storage/managed-fusion-agent/utils"
 	ocsv1 "github.com/red-hat-storage/ocs-operator/api/v1"
-	"github.com/red-hat-storage/ocs-osd-deployer/utils"
 	rook "github.com/rook/rook/pkg/apis/ceph.rook.io/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"

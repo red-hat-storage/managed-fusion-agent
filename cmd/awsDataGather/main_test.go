@@ -5,8 +5,8 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	tutils "github.com/red-hat-storage/ocs-osd-deployer/testutils"
-	"github.com/red-hat-storage/ocs-osd-deployer/utils"
+	tutils "github.com/red-hat-storage/managed-fusion-agent/testutils"
+	"github.com/red-hat-storage/managed-fusion-agent/utils"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
