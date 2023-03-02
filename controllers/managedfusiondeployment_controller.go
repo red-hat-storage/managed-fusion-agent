@@ -116,6 +116,7 @@ type pagerDutyConfig struct {
 // +kubebuilder:rbac:groups="network.openshift.io",resources=egressnetworkpolicies,verbs=create;get;list;watch;update
 // +kubebuilder:rbac:groups="k8s.ovn.org",resources=egressfirewalls,verbs=create;get;list;watch;update
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=create;get;list;watch;update
+// +kubebuilder:rbac:groups="",resources=namespaces,verbs=get;list;watch;delete
 // +kubebuilder:rbac:groups="config.openshift.io",resources=clusterversions,verbs=get;watch;list
 
 // SetupWithManager creates an setup a ManagedFusionDeployment to work with the provided manager
@@ -721,15 +722,7 @@ func (r *ManagedFusionDeployment) reconcilePrometheusProxyNetworkPolicy() error 
 }
 
 func (r *ManagedFusionDeployment) initiateAgentUninstallation() error {
-
-	r.Log.Info("deleting agent csv")
-	if err := r.deleteCSVByPrefix(agentCSVPrefix); err != nil {
-		return fmt.Errorf("Unable to delete csv: %v", err)
-	}
-	r.Log.Info("Agent csv removed successfully")
-
 	r.Log.Info("deleting agent namespace")
-
 	if err := r.delete(&corev1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: r.Namespace,
@@ -737,6 +730,13 @@ func (r *ManagedFusionDeployment) initiateAgentUninstallation() error {
 	}); err != nil {
 		return fmt.Errorf("failed to delete namespace: %v", err)
 	}
+	r.Log.Info("Agent namespace deleted successfully")
+
+	r.Log.Info("deleting agent csv")
+	if err := r.deleteCSVByPrefix(agentCSVPrefix); err != nil {
+		return fmt.Errorf("Unable to delete csv: %v", err)
+	}
+	r.Log.Info("Agent csv removed successfully")
 	return nil
 }
 
