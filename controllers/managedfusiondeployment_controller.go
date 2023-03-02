@@ -106,7 +106,13 @@ type pagerDutyConfig struct {
 // +kubebuilder:rbac:groups=operators.coreos.com,resources=clusterserviceversions,verbs=get;list;watch;delete;update;patch
 // +kubebuilder:rbac:groups="apps",resources=statefulsets,verbs=get;list;watch
 // +kubebuilder:rbac:groups="coordination.k8s.io",resources=leases,verbs=create;get;list;watch;update
-// +kubebuilder:rbac:groups="",namespace=system,resources={secrets,secrets/finalizers},verbs=create;get;list;watch;update
+// +kubebuilder:rbac:groups="",resources={secrets,secrets/finalizers},verbs=create;get;list;watch;update
+// +kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch;create;update
+// +kubebuilder:rbac:groups="networking.k8s.io",resources=networkpolicies,verbs=create;get;list;watch;update
+// +kubebuilder:rbac:groups="network.openshift.io",resources=egressnetworkpolicies,verbs=create;get;list;watch;update
+// +kubebuilder:rbac:groups="k8s.ovn.org",resources=egressfirewalls,verbs=create;get;list;watch;update
+// +kubebuilder:rbac:groups="",resources=configmaps,verbs=create;get;list;watch;update
+// +kubebuilder:rbac:groups="config.openshift.io",resources=clusterversions,verbs=get;watch;list
 
 // SetupWithManager creates an setup a ManagedFusionDeployment to work with the provided manager
 func (r *ManagedFusionDeployment) SetupWithManager(mgr ctrl.Manager, ctrlOptions *controller.Options) error {

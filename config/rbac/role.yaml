@@ -6,6 +6,37 @@ metadata:
   name: manager-role
 rules:
 - apiGroups:
+  - ""
+  resources:
+  - configmaps
+  verbs:
+  - create
+  - get
+  - list
+  - update
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - secrets
+  - secrets/finalizers
+  verbs:
+  - create
+  - get
+  - list
+  - update
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - services
+  verbs:
+  - create
+  - get
+  - list
+  - update
+  - watch
+- apiGroups:
   - apps
   resources:
   - statefulsets
@@ -14,9 +45,27 @@ rules:
   - list
   - watch
 - apiGroups:
+  - config.openshift.io
+  resources:
+  - clusterversions
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
   - coordination.k8s.io
   resources:
   - leases
+  verbs:
+  - create
+  - get
+  - list
+  - update
+  - watch
+- apiGroups:
+  - k8s.ovn.org
+  resources:
+  - egressfirewalls
   verbs:
   - create
   - get
@@ -71,6 +120,26 @@ rules:
   - update
   - watch
 - apiGroups:
+  - network.openshift.io
+  resources:
+  - egressnetworkpolicies
+  verbs:
+  - create
+  - get
+  - list
+  - update
+  - watch
+- apiGroups:
+  - networking.k8s.io
+  resources:
+  - networkpolicies
+  verbs:
+  - create
+  - get
+  - list
+  - update
+  - watch
+- apiGroups:
   - operators.coreos.com
   resources:
   - clusterserviceversions
@@ -79,24 +148,5 @@ rules:
   - get
   - list
   - patch
-  - update
-  - watch
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
-metadata:
-  creationTimestamp: null
-  name: manager-role
-  namespace: system
-rules:
-- apiGroups:
-  - ""
-  resources:
-  - secrets
-  - secrets/finalizers
-  verbs:
-  - create
-  - get
-  - list
   - update
   - watch
