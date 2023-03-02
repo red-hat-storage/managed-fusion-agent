@@ -21,10 +21,10 @@ import (
 	"fmt"
 	"io/ioutil"
 	"strings"
-	"time"
 
 	configv1 "github.com/openshift/api/config/v1"
 	opv1a1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
+	"gopkg.in/yaml.v2"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -43,31 +43,31 @@ import (
 	"github.com/go-logr/logr"
 	promv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	promv1a1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1alpha1"
-	ocsv1 "github.com/red-hat-storage/ocs-operator/api/v1"
-	"github.com/red-hat-storage/ocs-osd-deployer/api/v1alpha1"
-	v1 "github.com/red-hat-storage/ocs-osd-deployer/api/v1alpha1"
-	"github.com/red-hat-storage/ocs-osd-deployer/templates"
-	"github.com/red-hat-storage/ocs-osd-deployer/utils"
+	"github.com/red-hat-storage/managed-fusion-agent/templates"
+	"github.com/red-hat-storage/managed-fusion-agent/utils"
 )
 
 const (
-	managedFusionDeploymentFinalizer  = "managedfusiondeployment.ocs.openshift.io"
-	managedFusionDeploymentName       = "managedfusion"
-	managedFusionDeploymentSecretName = "managed-fusion-config"
-	prometheusName                    = "managed-fusion-prometheus"
-	alertmanagerName                  = "managed-fusion-alertmanager"
-	alertmanagerConfigName            = "managed-fusion-alertmanager-config"
-	deployerCSVPrefix                 = "ocs-osd-deployer"
-	monLabelKey                       = "app"
-	monLabelValue                     = "managed-fusion"
-	prometheusCatalogSourceName       = "prometheus-operator-source"
-	prometheusSubscriptionName        = "downstream-prometheus-operator"
-	alertRelabelConfigSecretName      = "managed-ocs-alert-relabel-config-secret"
-	alertRelabelConfigSecretKey       = "alertrelabelconfig.yaml"
+	managedFusionAgentFinalizer          = "managedfusionagent.ibm.com/finalizer"
+	managedFusionAgentSecretName         = "managed-fusion-agent-config"
+	managedFusionAgentSecretSMTPKey      = "smtp_config"
+	managedFusionAgentSecretPagerDutyKey = "pager_duty_config"
+	prometheusName                       = "managed-fusion-prometheus"
+	alertmanagerName                     = "managed-fusion-alertmanager"
+	alertmanagerConfigName               = "managed-fusion-alertmanager-config"
+	alertmanagerConfigSecretName         = "managed-fusion-alertmanager-config"
+	agentCSVPrefix                       = "managed-fusion-agent"
+	monLabelKey                          = "app"
+	monLabelValue                        = "managed-fusion-agent"
+	prometheusCatalogSourceName          = "prometheus-operator-source"
+	prometheusSubscriptionName           = "downstream-prometheus-operator"
+	pagerDutyKey                         = "pagerDutyServiceKey"
+	smtpPasswordKey                      = "smtpAuthPassword"
+	alertRelabelConfigSecretName         = "managed-ocs-alert-relabel-config-secret"
+	alertRelabelConfigSecretKey          = "alertrelabelconfig.yaml"
 )
 
-// ManagedOCSReconciler reconciles a ManagedOCS object
-type ManagedOCSReconciler struct {
+type ManagedFusionDeploymentReconciler struct {
 	Client             client.Client
 	UnrestrictedClient client.Client
 	Log                logr.Logger
@@ -75,55 +75,56 @@ type ManagedOCSReconciler struct {
 
 	ctx                            context.Context
 	namespace                      string
-	managedFusionDeployment        *v1alpha1.ManagedFusionDeployment
 	prometheusOperatorSubscription *opv1a1.Subscription
 	prometheusOperatorSource       *opv1a1.CatalogSource
 	prometheus                     *promv1.Prometheus
 	alertmanager                   *promv1.Alertmanager
 	alertmanagerConfig             *promv1a1.AlertmanagerConfig
+	alertmanagerConfigSecret       *corev1.Secret
 	managedFusionDeploymentSecret  *corev1.Secret
+	smtpConfigData                 *smtpConfig
+	pagerDutyConfigData            *pagerDutyConfig
 	CustomerNotificationHTMLPath   string
 }
 
-// Add necessary rbac permissions for managedocs finalizer in order to set blockOwnerDeletion.
-// +kubebuilder:rbac:groups=ocs.openshift.io,namespace=system,resources={managedocs,managedocs/finalizers},verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=ocs.openshift.io,namespace=system,resources=managedocs/status,verbs=get;update;patch
-// +kubebuilder:rbac:groups=ocs.openshift.io,namespace=system,resources=storageclusters,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=ocs.openshift.io,namespace=system,resources=ocsinitializations,verbs=get;list;watch;update;patch
-// +kubebuilder:rbac:groups=ocs.openshift.io,namespace=system,resources=storageconsumers,verbs=get;list;watch
-// +kubebuilder:rbac:groups="monitoring.coreos.com",namespace=system,resources={alertmanagers,prometheuses,alertmanagerconfigs},verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups="monitoring.coreos.com",namespace=system,resources=prometheusrules,verbs=get;list;watch;create;update;patch
-// +kubebuilder:rbac:groups="monitoring.coreos.com",namespace=system,resources=podmonitors,verbs=get;list;watch;update;patch
-// +kubebuilder:rbac:groups="monitoring.coreos.com",namespace=system,resources=servicemonitors,verbs=get;list;watch;update;patch;create;delete
-// +kubebuilder:rbac:groups="",namespace=system,resources=secrets,verbs=create;get;list;watch;update
-// +kubebuilder:rbac:groups=operators.coreos.com,namespace=system,resources=clusterserviceversions,verbs=get;list;watch;delete;update;patch
-// +kubebuilder:rbac:groups="apps",namespace=system,resources=statefulsets,verbs=get;list;watch
-// +kubebuilder:rbac:groups="",resources={persistentvolumes,secrets},verbs=get;list;watch
-// +kubebuilder:rbac:groups="",resources={services},verbs=get;list;watch;create;update
-// +kubebuilder:rbac:groups="storage.k8s.io",resources=storageclass,verbs=get;list;watch
-// +kubebuilder:rbac:groups="networking.k8s.io",namespace=system,resources=networkpolicies,verbs=create;get;list;watch;update
-// +kubebuilder:rbac:groups="network.openshift.io",namespace=system,resources=egressnetworkpolicies,verbs=create;get;list;watch;update
-// +kubebuilder:rbac:groups="k8s.ovn.org",namespace=system,resources=egressfirewalls,verbs=create;get;list;watch;update
-// +kubebuilder:rbac:groups="coordination.k8s.io",namespace=system,resources=leases,verbs=create;get;list;watch;update
-// +kubebuilder:rbac:groups="odf.openshift.io",namespace=system,resources=storagesystems,verbs=list;watch;delete
-// +kubebuilder:rbac:groups="config.openshift.io",resources=clusterversions,verbs=get;watch;list
-// +kubebuilder:rbac:groups="apiextensions.k8s.io",resources=customresourcedefinitions,verbs=get;watch;list
+// Add necessary rbac permissions for managedfusiondeployment finalizer in order to set blockOwnerDeletion.
+// +kubebuilder:rbac:groups="monitoring.coreos.com",resources={alertmanagers,prometheuses,alertmanagerconfigs},verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups="monitoring.coreos.com",resources=prometheusrules,verbs=get;list;watch;create;update;patch
+// +kubebuilder:rbac:groups="monitoring.coreos.com",resources=podmonitors,verbs=get;list;watch;update;patch
+// +kubebuilder:rbac:groups="monitoring.coreos.com",resources=servicemonitors,verbs=get;list;watch;update;patch;create;delete
+// +kubebuilder:rbac:groups="",resources={secrets,secrets/finalizers},verbs=create;get;list;watch;update
+// +kubebuilder:rbac:groups=operators.coreos.com,resources={subscriptions,catalogsources},verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=operators.coreos.com,resources=clusterserviceversions,verbs=get;list;watch;delete;update;patch
+// +kubebuilder:rbac:groups=operators.coreos.com,resources=installplans,verbs=get;list;watch;update;patch
+// +kubebuilder:rbac:groups="apps",resources=statefulsets,verbs=get;list;watch
+// +kubebuilder:rbac:groups="coordination.k8s.io",resources=leases,verbs=create;get;list;watch;update
 
-// SetupWithManager creates an setup a ManagedOCSReconciler to work with the provided manager
-func (r *ManagedOCSReconciler) SetupWithManager(mgr ctrl.Manager, ctrlOptions *controller.Options) error {
+// SetupWithManager creates an setup a ManagedFusionDeploymentReconciler to work with the provided manager
+func (r *ManagedFusionDeploymentReconciler) SetupWithManager(mgr ctrl.Manager, ctrlOptions *controller.Options) error {
 	if ctrlOptions == nil {
 		ctrlOptions = &controller.Options{
 			MaxConcurrentReconciles: 1,
 		}
 	}
-	managedFusionDeploymentPredicates := builder.WithPredicates(
-		predicate.GenerationChangedPredicate{},
-	)
-	secretPredicates := builder.WithPredicates(
+	managedFusionDeploymentSecretPredicates := builder.WithPredicates(
 		predicate.NewPredicateFuncs(
 			func(client client.Object) bool {
 				name := client.GetName()
-				return name == r.managedFusionDeploymentSecret.Name
+				return name == managedFusionAgentSecretName
+			},
+		),
+	)
+	installPlanPredicates := builder.WithPredicates(
+		predicate.NewPredicateFuncs(
+			func(object client.Object) bool {
+				owners := object.GetOwnerReferences()
+				for _, owner := range owners {
+					if owner.Kind == "Subcription" &&
+						owner.Name == prometheusSubscriptionName {
+						return true
+					}
+				}
+				return false
 			},
 		),
 	)
@@ -136,11 +137,11 @@ func (r *ManagedOCSReconciler) SetupWithManager(mgr ctrl.Manager, ctrlOptions *c
 			},
 		),
 	)
-	enqueueManangedOCSRequest := handler.EnqueueRequestsFromMapFunc(
+	enqueueManangedFusionDeploymentRequest := handler.EnqueueRequestsFromMapFunc(
 		func(client client.Object) []reconcile.Request {
 			return []reconcile.Request{{
 				NamespacedName: types.NamespacedName{
-					Name:      managedFusionDeploymentName,
+					Name:      managedFusionAgentSecretName,
 					Namespace: client.GetNamespace(),
 				},
 			}}
@@ -149,48 +150,44 @@ func (r *ManagedOCSReconciler) SetupWithManager(mgr ctrl.Manager, ctrlOptions *c
 
 	return ctrl.NewControllerManagedBy(mgr).
 		WithOptions(*ctrlOptions).
-		For(&v1.ManagedFusionDeployment{}, managedFusionDeploymentPredicates).
-
+		For(&corev1.Secret{}, managedFusionDeploymentSecretPredicates).
 		// Watch owned resources
 		Owns(&promv1.Prometheus{}).
 		Owns(&promv1.Alertmanager{}).
+		Owns(&corev1.Secret{}).
 		Owns(&promv1a1.AlertmanagerConfig{}).
 		Owns(&opv1a1.CatalogSource{}).
 		Owns(&opv1a1.Subscription{}).
 		// Watch non-owned resources
 		Watches(
-			&source.Kind{Type: &corev1.Secret{}},
-			enqueueManangedOCSRequest,
-			secretPredicates,
+			&source.Kind{Type: &opv1a1.InstallPlan{}},
+			enqueueManangedFusionDeploymentRequest,
+			installPlanPredicates,
 		).
 		Watches(
 			&source.Kind{Type: &appsv1.StatefulSet{}},
-			enqueueManangedOCSRequest,
+			enqueueManangedFusionDeploymentRequest,
 			monStatefulSetPredicates,
-		).
-		Watches(
-			&source.Kind{Type: &ocsv1.OCSInitialization{}},
-			enqueueManangedOCSRequest,
 		).
 		Complete(r)
 }
 
-// Reconcile changes to all owned resource based on the infromation provided by the ManagedOCS resource
-func (r *ManagedOCSReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+// Reconcile changes to all owned resource based on the infromation provided by the ManangedFusionDeployment secret resource
+func (r *ManagedFusionDeploymentReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := r.Log.WithValues("req.Namespace", req.Namespace, "req.Name", req.Name)
-	log.Info("Starting reconcile for ManagedOCS")
+	log.Info("Starting reconcile for ManangedFusionDeployment")
 
 	// Initalize the reconciler properties from the request
 	r.initReconciler(ctx, req)
 
-	// Load the managed ocs resource (input)
-	if err := r.get(r.managedFusionDeployment); err != nil {
+	// Load the ManangedFusionDeployment secret resource (input)
+	if err := r.get(r.managedFusionDeploymentSecret); err != nil {
 		if errors.IsNotFound(err) {
-			r.Log.V(-1).Info("ManagedFusionDeployment resource not found")
+			r.Log.V(-1).Info("managed-fusion-agent-config secret resource not found")
 			return ctrl.Result{}, nil
 		}
-		r.Log.Error(err, "Failed to get ManagedFusionDeployment")
-		return ctrl.Result{}, fmt.Errorf("failed to get ManagedFusionDeployment: %v", err)
+		r.Log.Error(err, "Failed to get managed-fusion-agent-config secret")
+		return ctrl.Result{}, fmt.Errorf("failed to get managed-fusion-agent-config secret: %v", err)
 	}
 
 	// Run the reconcile phases
@@ -198,30 +195,12 @@ func (r *ManagedOCSReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	if err != nil {
 		r.Log.Error(err, "An error was encountered during reconcilePhases")
 	}
-
-	// Ensure status is updated once even on failed reconciles
-	var statusErr error
-	if r.managedFusionDeployment.UID != "" {
-		statusErr = r.Client.Status().Update(r.ctx, r.managedFusionDeployment)
-	}
-
-	// Reconcile errors have priority to status update errors
-	if err != nil {
-		return ctrl.Result{}, err
-	} else if statusErr != nil {
-		return ctrl.Result{}, statusErr
-	} else {
-		return result, nil
-	}
+	return result, nil
 }
 
-func (r *ManagedOCSReconciler) initReconciler(ctx context.Context, req ctrl.Request) {
+func (r *ManagedFusionDeploymentReconciler) initReconciler(ctx context.Context, req ctrl.Request) {
 	r.ctx = ctx
 	r.namespace = req.NamespacedName.Namespace
-
-	r.managedFusionDeployment = &v1alpha1.ManagedFusionDeployment{}
-	r.managedFusionDeployment.Name = managedFusionDeploymentName
-	r.managedFusionDeployment.Namespace = r.namespace
 
 	r.prometheusOperatorSource = &opv1a1.CatalogSource{}
 	r.prometheusOperatorSource.Name = prometheusCatalogSourceName
@@ -239,46 +218,44 @@ func (r *ManagedOCSReconciler) initReconciler(ctx context.Context, req ctrl.Requ
 	r.alertmanager.Name = alertmanagerName
 	r.alertmanager.Namespace = r.namespace
 
+	r.alertmanagerConfigSecret = &corev1.Secret{}
+	r.alertmanagerConfigSecret.Name = alertmanagerConfigSecretName
+	r.alertmanagerConfigSecret.Namespace = r.namespace
+
 	r.alertmanagerConfig = &promv1a1.AlertmanagerConfig{}
 	r.alertmanagerConfig.Name = alertmanagerConfigName
 	r.alertmanagerConfig.Namespace = r.namespace
 
 	r.managedFusionDeploymentSecret = &corev1.Secret{}
-	r.managedFusionDeploymentSecret.Name = managedFusionDeploymentSecretName
+	r.managedFusionDeploymentSecret.Name = managedFusionAgentSecretName
 	r.managedFusionDeploymentSecret.Namespace = r.namespace
+
+	r.smtpConfigData = &smtpConfig{}
+	r.pagerDutyConfigData = &pagerDutyConfig{}
 }
 
-func (r *ManagedOCSReconciler) reconcilePhases() (reconcile.Result, error) {
+func (r *ManagedFusionDeploymentReconciler) reconcilePhases() (reconcile.Result, error) {
 	// Uninstallation depends on the status of the components.
 	// We are checking the uninstallation condition before getting the component status
 	// to mitigate scenarios where changes to the component status occurs while the uninstallation logic is running.
 
-	// Update the status of the components
-	r.updateComponentStatus()
-
-	if !r.managedFusionDeployment.DeletionTimestamp.IsZero() {
-		if !r.areComponentsReadyForUninstall() {
-			r.Log.Info("Sub-components are not in ready state, cannot proceed with uninstallation")
-			return ctrl.Result{Requeue: true, RequeueAfter: 10 * time.Second}, nil
-		}
-
-		r.Log.Info("removing finalizer from the ManagedFusionDeployment resource")
-		r.managedFusionDeployment.SetFinalizers(utils.Remove(r.managedFusionDeployment.GetFinalizers(), managedFusionDeploymentFinalizer))
-		if err := r.Client.Update(r.ctx, r.managedFusionDeployment); err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to remove finalizer from managedFusionDeployment: %v", err)
+	if !r.managedFusionDeploymentSecret.DeletionTimestamp.IsZero() {
+		r.Log.Info("removing finalizer from the managed-fusion-agent-config secret resource")
+		r.managedFusionDeploymentSecret.SetFinalizers(utils.Remove(r.managedFusionDeploymentSecret.GetFinalizers(), managedFusionAgentFinalizer))
+		if err := r.Client.Update(r.ctx, r.managedFusionDeploymentSecret); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to remove finalizer from managed-fusion-agent-config secret: %v", err)
 		}
 		r.Log.Info("finallizer removed successfully")
 
 		if err := r.removeOLMComponents(); err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to remove agent CSV: %v", err)
 		}
-
-	} else if r.managedFusionDeployment.UID != "" {
-		if !utils.Contains(r.managedFusionDeployment.GetFinalizers(), managedFusionDeploymentFinalizer) {
-			r.Log.V(-1).Info("finalizer missing on the managedFusionDeployment resource, adding...")
-			r.managedFusionDeployment.SetFinalizers(append(r.managedFusionDeployment.GetFinalizers(), managedFusionDeploymentFinalizer))
-			if err := r.update(r.managedFusionDeployment); err != nil {
-				return ctrl.Result{}, fmt.Errorf("failed to update managedFusionDeployment with finalizer: %v", err)
+	} else if r.managedFusionDeploymentSecret.UID != "" {
+		if !utils.Contains(r.managedFusionDeploymentSecret.GetFinalizers(), managedFusionAgentFinalizer) {
+			r.Log.V(-1).Info("finalizer missing on the managed-fusion-agent-config secret resource, adding...")
+			r.managedFusionDeploymentSecret.SetFinalizers(append(r.managedFusionDeploymentSecret.GetFinalizers(), managedFusionAgentFinalizer))
+			if err := r.update(r.managedFusionDeploymentSecret); err != nil {
+				return ctrl.Result{}, fmt.Errorf("failed to update managed-fusion-agent-config secret with finalizer: %v", err)
 			}
 		}
 
@@ -297,6 +274,9 @@ func (r *ManagedOCSReconciler) reconcilePhases() (reconcile.Result, error) {
 		if err := r.reconcileAlertmanager(); err != nil {
 			return ctrl.Result{}, err
 		}
+		if err := r.reconcileAlertmanagerConfigSecret(); err != nil {
+			return ctrl.Result{}, err
+		}
 		if err := r.reconcileAlertmanagerConfig(); err != nil {
 			return ctrl.Result{}, err
 		}
@@ -305,61 +285,7 @@ func (r *ManagedOCSReconciler) reconcilePhases() (reconcile.Result, error) {
 	return ctrl.Result{}, nil
 }
 
-func (r *ManagedOCSReconciler) updateComponentStatus() {
-	// Getting the status of the Prometheus component.
-	promStatus := &r.managedFusionDeployment.Status.Components.Prometheus
-	if err := r.get(r.prometheus); err == nil {
-		promStatefulSet := &appsv1.StatefulSet{}
-		promStatefulSet.Namespace = r.namespace
-		promStatefulSet.Name = fmt.Sprintf("prometheus-%s", prometheusName)
-		if err := r.get(promStatefulSet); err == nil {
-			desiredReplicas := int32(1)
-			if r.prometheus.Spec.Replicas != nil {
-				desiredReplicas = *r.prometheus.Spec.Replicas
-			}
-			if promStatefulSet.Status.ReadyReplicas != desiredReplicas {
-				promStatus.State = v1.ComponentPending
-			} else {
-				promStatus.State = v1.ComponentReady
-			}
-		} else {
-			promStatus.State = v1.ComponentPending
-		}
-	} else if errors.IsNotFound(err) {
-		promStatus.State = v1.ComponentNotFound
-	} else {
-		r.Log.V(-1).Info("error getting Prometheus, setting compoment status to Unknown")
-		promStatus.State = v1.ComponentUnknown
-	}
-
-	// Getting the status of the Alertmanager component.
-	amStatus := &r.managedFusionDeployment.Status.Components.Alertmanager
-	if err := r.get(r.alertmanager); err == nil {
-		amStatefulSet := &appsv1.StatefulSet{}
-		amStatefulSet.Namespace = r.namespace
-		amStatefulSet.Name = fmt.Sprintf("alertmanager-%s", alertmanagerName)
-		if err := r.get(amStatefulSet); err == nil {
-			desiredReplicas := int32(1)
-			if r.alertmanager.Spec.Replicas != nil {
-				desiredReplicas = *r.alertmanager.Spec.Replicas
-			}
-			if amStatefulSet.Status.ReadyReplicas != desiredReplicas {
-				amStatus.State = v1.ComponentPending
-			} else {
-				amStatus.State = v1.ComponentReady
-			}
-		} else {
-			amStatus.State = v1.ComponentPending
-		}
-	} else if errors.IsNotFound(err) {
-		amStatus.State = v1.ComponentNotFound
-	} else {
-		r.Log.V(-1).Info("error getting Alertmanager, setting compoment status to Unknown")
-		amStatus.State = v1.ComponentUnknown
-	}
-}
-
-func (r *ManagedOCSReconciler) reconcilePrometheusOperatorSource() error {
+func (r *ManagedFusionDeploymentReconciler) reconcilePrometheusOperatorSource() error {
 	r.Log.Info("Reconciling Prometheus Operator CatalogSource")
 	_, err := ctrl.CreateOrUpdate(r.ctx, r.Client, r.prometheusOperatorSource, func() error {
 		if err := r.own(r.prometheusOperatorSource); err != nil {
@@ -375,7 +301,7 @@ func (r *ManagedOCSReconciler) reconcilePrometheusOperatorSource() error {
 	return nil
 }
 
-func (r *ManagedOCSReconciler) reconcilePrometheusOperatorSubscription() error {
+func (r *ManagedFusionDeploymentReconciler) reconcilePrometheusOperatorSubscription() error {
 	r.Log.Info("Reconciling Prometheus Operator Subscription")
 	_, err := ctrl.CreateOrUpdate(r.ctx, r.Client, r.prometheusOperatorSubscription, func() error {
 		if err := r.own(r.prometheusOperatorSubscription); err != nil {
@@ -393,7 +319,7 @@ func (r *ManagedOCSReconciler) reconcilePrometheusOperatorSubscription() error {
 	return nil
 }
 
-func (r *ManagedOCSReconciler) reconcilePrometheusOperatorInstallPlan() error {
+func (r *ManagedFusionDeploymentReconciler) reconcilePrometheusOperatorInstallPlan() error {
 	r.Log.Info("Reconciling Prometheus Operator InstallPlan")
 	prometheusOperatorCSV := &opv1a1.ClusterServiceVersion{}
 	prometheusOperatorCSV.Name = templates.PrometheusCSVName
@@ -426,7 +352,7 @@ func (r *ManagedOCSReconciler) reconcilePrometheusOperatorInstallPlan() error {
 	return nil
 }
 
-func (r *ManagedOCSReconciler) reconcilePrometheus() error {
+func (r *ManagedFusionDeploymentReconciler) reconcilePrometheus() error {
 	r.Log.Info("Reconciling Prometheus")
 
 	_, err := ctrl.CreateOrUpdate(r.ctx, r.Client, r.prometheus, func() error {
@@ -439,7 +365,7 @@ func (r *ManagedOCSReconciler) reconcilePrometheus() error {
 
 		// use the container image of kube-rbac-proxy that comes in deployer CSV
 		// for prometheus kube-rbac-proxy sidecar
-		deployerCSV, err := r.getCSVByPrefix(deployerCSVPrefix)
+		deployerCSV, err := r.getCSVByPrefix(agentCSVPrefix)
 		if err != nil {
 			return fmt.Errorf("Unable to set image for kube-rbac-proxy container: %v", err)
 		}
@@ -494,7 +420,7 @@ func (r *ManagedOCSReconciler) reconcilePrometheus() error {
 	return nil
 }
 
-func (r *ManagedOCSReconciler) reconcileAlertmanager() error {
+func (r *ManagedFusionDeploymentReconciler) reconcileAlertmanager() error {
 	r.Log.Info("Reconciling Alertmanager")
 	_, err := ctrl.CreateOrUpdate(r.ctx, r.Client, r.alertmanager, func() error {
 		if err := r.own(r.alertmanager); err != nil {
@@ -518,7 +444,62 @@ func (r *ManagedOCSReconciler) reconcileAlertmanager() error {
 	return nil
 }
 
-func (r *ManagedOCSReconciler) reconcileAlertmanagerConfig() error {
+type smtpConfig struct {
+	Endpoint           string   `yaml:"endpoint"`
+	Username           string   `yaml:"username"`
+	Password           string   `yaml:"password"`
+	FromAddress        string   `yaml:"fromAddress"`
+	NotificationEmails []string `yaml:"notificationEmails"`
+}
+
+type pagerDutyConfig struct {
+	SOPEndpoint string `yaml:"sopEndpoint"`
+	SecretKey   string `yaml:"secretKey"`
+}
+
+func (r *ManagedFusionDeploymentReconciler) reconcileAlertmanagerConfigSecret() error {
+	r.Log.Info("Reconciling AlertmanagerConfigSecret")
+
+	_, err := ctrl.CreateOrUpdate(r.ctx, r.Client, r.alertmanagerConfigSecret, func() error {
+		if err := r.own(r.alertmanagerConfigSecret); err != nil {
+			return err
+		}
+
+		managedFusionDeploymentSecretData := r.managedFusionDeploymentSecret.Data
+		managedFusionDeploymentPagerDutyConfig, exist := managedFusionDeploymentSecretData[managedFusionAgentSecretPagerDutyKey]
+		if !exist {
+			return fmt.Errorf("pager_duty_config key not found in managed-fusion-agent-config secret")
+		}
+		if err := yaml.Unmarshal(managedFusionDeploymentPagerDutyConfig, r.pagerDutyConfigData); err != nil {
+			return err
+		}
+		if r.pagerDutyConfigData.SecretKey == "" {
+			return fmt.Errorf("managed-fusion-agent-config secret contains an empty pagerKey entry")
+		}
+
+		managedFusionDeploymentSMTPConfig, exist := managedFusionDeploymentSecretData[managedFusionAgentSecretSMTPKey]
+		if !exist {
+			return fmt.Errorf("smtp_config key not found in managed-fusion-agent-config secret")
+		}
+		if err := yaml.Unmarshal(managedFusionDeploymentSMTPConfig, r.smtpConfigData); err != nil {
+			return err
+		}
+		if r.smtpConfigData.Password == "" {
+			return fmt.Errorf("managed-fusion-agent-config secret contains an empty smtpPassword entry")
+		}
+
+		r.alertmanagerConfigSecret.Data = map[string][]byte{
+			pagerDutyKey:    []byte(r.pagerDutyConfigData.SecretKey),
+			smtpPasswordKey: []byte(r.smtpConfigData.Password),
+		}
+
+		return nil
+	})
+
+	return err
+}
+
+func (r *ManagedFusionDeploymentReconciler) reconcileAlertmanagerConfig() error {
 	r.Log.Info("Reconciling AlertmanagerConfig")
 
 	_, err := ctrl.CreateOrUpdate(r.ctx, r.Client, r.alertmanagerConfig, func() error {
@@ -526,50 +507,26 @@ func (r *ManagedOCSReconciler) reconcileAlertmanagerConfig() error {
 			return err
 		}
 
-		managedFusionDeploymentSpec := r.managedFusionDeployment.Spec
-		if managedFusionDeploymentSpec.Pager.SOPEndpoint == "" {
-			return fmt.Errorf("managedFusionDeployment CR does not contain a SOPEndpoint entry")
+		if r.pagerDutyConfigData.SOPEndpoint == "" {
+			return fmt.Errorf("managed-fusion-agent-config secret does not contain a SOPEndpoint entry")
 		}
 
 		alertingAddressList := []string{}
 		alertingAddressList = append(alertingAddressList,
-			managedFusionDeploymentSpec.SMTP.NotificationEmails...)
-		if managedFusionDeploymentSpec.SMTP.Username == "" {
-			return fmt.Errorf("managedFusionDeployment CR does not contain a username entry")
+			r.smtpConfigData.NotificationEmails...)
+
+		if r.smtpConfigData.Username == "" {
+			return fmt.Errorf("managed-fusion-agent-config secret does not contain a username entry")
 		}
-		if managedFusionDeploymentSpec.SMTP.Endpoint == "" {
-			return fmt.Errorf("managedFusionDeployment CR does not contain a endpoint entry")
+		if r.smtpConfigData.Endpoint == "" {
+			return fmt.Errorf("managed-fusion-agent-config secret does not contain a endpoint entry")
 		}
-		if managedFusionDeploymentSpec.SMTP.FromAddress == "" {
-			return fmt.Errorf("managedFusionDeployment CR does not contain a fromAddress entry")
+		if r.smtpConfigData.FromAddress == "" {
+			return fmt.Errorf("managed-fusion-agent-config secret does not contain a fromAddress entry")
 		}
 		smtpHTML, err := ioutil.ReadFile(r.CustomerNotificationHTMLPath)
 		if err != nil {
 			return fmt.Errorf("unable to read customernotification.html file: %v", err)
-		}
-
-		// if r.managedFusionDeploymentSecret.UID == "" {
-		if err := r.get(r.managedFusionDeploymentSecret); err != nil {
-			return fmt.Errorf("unable to get managed-fusion-config secret: %v", err)
-		}
-		// }
-		managedFusionDeploymentSecretData := r.managedFusionDeploymentSecret.Data
-		pagerdutyServiceKey, found := managedFusionDeploymentSecretData["pagerKey"]
-		if !found {
-			return fmt.Errorf("managedFusionDeploymentSecret does not contain a pagerKey entry")
-		} else {
-			if string(pagerdutyServiceKey) == "" {
-				return fmt.Errorf("managedFusionDeploymentSecret contains an empty pagerKey entry")
-			}
-		}
-
-		smtpPassword, found := managedFusionDeploymentSecretData["smtpPassword"]
-		if !found {
-			return fmt.Errorf("managedFusionDeploymentSecret does not contain a smtpPassword entry")
-		} else {
-			if string(smtpPassword) == "" {
-				return fmt.Errorf("managedFusionDeploymentSecret contains an empty smtpPassword entry")
-			}
 		}
 
 		desired := templates.AlertmanagerConfigTemplate.DeepCopy()
@@ -577,17 +534,17 @@ func (r *ManagedOCSReconciler) reconcileAlertmanagerConfig() error {
 			receiver := &desired.Spec.Receivers[i]
 			switch receiver.Name {
 			case "pagerduty":
-				receiver.PagerDutyConfigs[0].ServiceKey.Key = "pagerKey"
-				receiver.PagerDutyConfigs[0].ServiceKey.LocalObjectReference.Name = r.managedFusionDeploymentSecret.Name
+				receiver.PagerDutyConfigs[0].ServiceKey.Key = pagerDutyKey
+				receiver.PagerDutyConfigs[0].ServiceKey.LocalObjectReference.Name = r.alertmanagerConfigSecret.Name
 				receiver.PagerDutyConfigs[0].Details[0].Key = "SOP"
-				receiver.PagerDutyConfigs[0].Details[0].Value = managedFusionDeploymentSpec.Pager.SOPEndpoint
+				receiver.PagerDutyConfigs[0].Details[0].Value = r.pagerDutyConfigData.SOPEndpoint
 			case "SendGrid":
 				if len(alertingAddressList) > 0 {
-					receiver.EmailConfigs[0].Smarthost = managedFusionDeploymentSpec.SMTP.Endpoint
-					receiver.EmailConfigs[0].AuthUsername = managedFusionDeploymentSpec.SMTP.Username
-					receiver.EmailConfigs[0].AuthPassword.LocalObjectReference.Name = r.managedFusionDeploymentSecret.Name
-					receiver.EmailConfigs[0].AuthPassword.Key = "smtpPassword"
-					receiver.EmailConfigs[0].From = managedFusionDeploymentSpec.SMTP.FromAddress
+					receiver.EmailConfigs[0].Smarthost = r.smtpConfigData.Endpoint
+					receiver.EmailConfigs[0].AuthUsername = r.smtpConfigData.Username
+					receiver.EmailConfigs[0].AuthPassword.LocalObjectReference.Name = r.alertmanagerConfigSecret.Name
+					receiver.EmailConfigs[0].AuthPassword.Key = smtpPasswordKey
+					receiver.EmailConfigs[0].From = r.smtpConfigData.FromAddress
 					receiver.EmailConfigs[0].To = strings.Join(alertingAddressList, ", ")
 					receiver.EmailConfigs[0].HTML = string(smtpHTML)
 				} else {
@@ -598,23 +555,16 @@ func (r *ManagedOCSReconciler) reconcileAlertmanagerConfig() error {
 		}
 		r.alertmanagerConfig.Spec = desired.Spec
 		utils.AddLabel(r.alertmanagerConfig, monLabelKey, monLabelValue)
-
 		return nil
 	})
 
 	return err
 }
 
-func (r *ManagedOCSReconciler) areComponentsReadyForUninstall() bool {
-	subComponents := r.managedFusionDeployment.Status.Components
-	return subComponents.Prometheus.State == v1.ComponentReady &&
-		subComponents.Alertmanager.State == v1.ComponentReady
-}
-
-func (r *ManagedOCSReconciler) removeOLMComponents() error {
+func (r *ManagedFusionDeploymentReconciler) removeOLMComponents() error {
 
 	r.Log.Info("deleting agent csv")
-	if err := r.deleteCSVByPrefix(deployerCSVPrefix); err != nil {
+	if err := r.deleteCSVByPrefix(agentCSVPrefix); err != nil {
 		return fmt.Errorf("Unable to delete csv: %v", err)
 	} else {
 		r.Log.Info("Agent csv removed successfully")
@@ -622,36 +572,36 @@ func (r *ManagedOCSReconciler) removeOLMComponents() error {
 	}
 }
 
-func (r *ManagedOCSReconciler) get(obj client.Object) error {
+func (r *ManagedFusionDeploymentReconciler) get(obj client.Object) error {
 	key := client.ObjectKeyFromObject(obj)
 	return r.Client.Get(r.ctx, key, obj)
 }
 
-func (r *ManagedOCSReconciler) list(obj client.ObjectList) error {
+func (r *ManagedFusionDeploymentReconciler) list(obj client.ObjectList) error {
 	listOptions := client.InNamespace(r.namespace)
 	return r.Client.List(r.ctx, obj, listOptions)
 }
 
-func (r *ManagedOCSReconciler) update(obj client.Object) error {
+func (r *ManagedFusionDeploymentReconciler) update(obj client.Object) error {
 	return r.Client.Update(r.ctx, obj)
 }
 
-func (r *ManagedOCSReconciler) delete(obj client.Object) error {
+func (r *ManagedFusionDeploymentReconciler) delete(obj client.Object) error {
 	if err := r.Client.Delete(r.ctx, obj); err != nil && !errors.IsNotFound(err) {
 		return err
 	}
 	return nil
 }
 
-func (r *ManagedOCSReconciler) own(resource metav1.Object) error {
-	// Ensure managedOCS ownership on a resource
-	if err := ctrl.SetControllerReference(r.managedFusionDeployment, resource, r.Scheme); err != nil {
+func (r *ManagedFusionDeploymentReconciler) own(resource metav1.Object) error {
+	// Ensure ManangedFusionDeployment secret ownership on a resource
+	if err := ctrl.SetControllerReference(r.managedFusionDeploymentSecret, resource, r.Scheme); err != nil {
 		return err
 	}
 	return nil
 }
 
-func (r *ManagedOCSReconciler) deleteCSVByPrefix(name string) error {
+func (r *ManagedFusionDeploymentReconciler) deleteCSVByPrefix(name string) error {
 	if csv, err := r.getCSVByPrefix(name); err == nil {
 		return r.delete(csv)
 	} else if errors.IsNotFound(err) {
@@ -661,7 +611,7 @@ func (r *ManagedOCSReconciler) deleteCSVByPrefix(name string) error {
 	}
 }
 
-func (r *ManagedOCSReconciler) getCSVByPrefix(name string) (*opv1a1.ClusterServiceVersion, error) {
+func (r *ManagedFusionDeploymentReconciler) getCSVByPrefix(name string) (*opv1a1.ClusterServiceVersion, error) {
 	csvList := opv1a1.ClusterServiceVersionList{}
 	if err := r.list(&csvList); err != nil {
 		return nil, fmt.Errorf("unable to list csv resources: %v", err)
