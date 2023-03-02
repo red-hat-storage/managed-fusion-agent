@@ -29,12 +29,16 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	controller "sigs.k8s.io/controller-runtime/pkg/controller"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	"github.com/go-logr/logr"
 	promv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
@@ -138,7 +142,24 @@ func (r *ManagedFusionDeployment) SetupWithManager(mgr ctrl.Manager, ctrlOptions
 			return false
 		},
 	)
-
+	monResourcesPredicates := builder.WithPredicates(
+		predicate.NewPredicateFuncs(
+			func(client client.Object) bool {
+				labels := client.GetLabels()
+				return labels == nil || labels[monLabelKey] != monLabelValue
+			},
+		),
+	)
+	enqueueManagedFusionAgentRequest := handler.EnqueueRequestsFromMapFunc(
+		func(object client.Object) []reconcile.Request {
+			return []reconcile.Request{{
+				NamespacedName: types.NamespacedName{
+					Name:      managedFusionSecretName,
+					Namespace: object.GetNamespace(),
+				},
+			}}
+		},
+	)
 	return ctrl.NewControllerManagedBy(mgr).
 		WithOptions(*ctrlOptions).
 		For(&corev1.Secret{}).
@@ -147,6 +168,25 @@ func (r *ManagedFusionDeployment) SetupWithManager(mgr ctrl.Manager, ctrlOptions
 		Owns(&promv1.Alertmanager{}).
 		Owns(&corev1.Secret{}).
 		Owns(&promv1a1.AlertmanagerConfig{}).
+		Owns(&corev1.ConfigMap{}).
+		Owns(&corev1.Service{}).
+		Owns(&promv1.ServiceMonitor{}).
+		Owns(&netv1.NetworkPolicy{}).
+		Watches(
+			&source.Kind{Type: &promv1.PodMonitor{}},
+			enqueueManagedFusionAgentRequest,
+			monResourcesPredicates,
+		).
+		Watches(
+			&source.Kind{Type: &promv1.ServiceMonitor{}},
+			enqueueManagedFusionAgentRequest,
+			monResourcesPredicates,
+		).
+		Watches(
+			&source.Kind{Type: &promv1.PrometheusRule{}},
+			enqueueManagedFusionAgentRequest,
+			monResourcesPredicates,
+		).
 		WithEventFilter(filterNamespaceScopedEvents).
 		Complete(r)
 }
