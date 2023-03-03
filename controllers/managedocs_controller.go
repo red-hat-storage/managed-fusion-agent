@@ -20,25 +20,17 @@ import (
 	"context"
 	"fmt"
 	"io/ioutil"
-	"math"
-	"net/url"
-	"strconv"
 	"strings"
 	"time"
 
-	"gopkg.in/yaml.v2"
-
+	configv1 "github.com/openshift/api/config/v1"
 	opv1a1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	storagev1 "k8s.io/api/storage/v1"
-	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/intstr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -49,64 +41,29 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	"github.com/go-logr/logr"
-	configv1 "github.com/openshift/api/config/v1"
-	openshiftv1 "github.com/openshift/api/network/v1"
-	ovnv1 "github.com/ovn-org/ovn-kubernetes/go-controller/pkg/crd/egressfirewall/v1"
 	promv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	promv1a1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1alpha1"
 	ocsv1 "github.com/red-hat-storage/ocs-operator/api/v1"
-	ocsv1alpha1 "github.com/red-hat-storage/ocs-operator/api/v1alpha1"
+	"github.com/red-hat-storage/ocs-osd-deployer/api/v1alpha1"
 	v1 "github.com/red-hat-storage/ocs-osd-deployer/api/v1alpha1"
 	"github.com/red-hat-storage/ocs-osd-deployer/templates"
 	"github.com/red-hat-storage/ocs-osd-deployer/utils"
-	netv1 "k8s.io/api/networking/v1"
 )
 
 const (
-	ManagedOCSFinalizer    = "managedocs.ocs.openshift.io"
-	EgressFirewallCRD      = "egressfirewalls.k8s.ovn.org"
-	EgressNetworkPolicyCRD = "egressnetworkpolicies.network.openshift.io"
-
-	managedOCSName                     = "managedocs"
-	storageClusterName                 = "ocs-storagecluster"
-	prometheusName                     = "managed-ocs-prometheus"
-	prometheusServiceName              = "prometheus"
-	alertmanagerName                   = "managed-ocs-alertmanager"
-	alertmanagerConfigName             = "managed-ocs-alertmanager-config"
-	dmsRuleName                        = "dms-monitor-rule"
-	storageSizeKey                     = "size"
-	storageUnitKey                     = "unit"
-	onboardingTicketKey                = "onboarding-ticket"
-	storageProviderEndpointKey         = "storage-provider-endpoint"
-	enableMCGKey                       = "enable-mcg"
-	notificationEmailKeyPrefix         = "notification-email"
-	onboardingValidationKey            = "onboarding-validation-key"
-	deviceSetName                      = "default"
-	storageClassRbdName                = "ocs-storagecluster-ceph-rbd"
-	storageClassCephFSName             = "ocs-storagecluster-cephfs"
-	deployerCSVPrefix                  = "ocs-osd-deployer"
-	ocsOperatorName                    = "ocs-operator"
-	mcgOperatorName                    = "mcg-operator"
-	egressNetworkPolicyName            = "egress-rule"
-	egressFirewallName                 = "default"
-	ingressNetworkPolicyName           = "ingress-rule"
-	cephIngressNetworkPolicyName       = "ceph-ingress-rule"
-	providerApiServerNetworkPolicyName = "provider-api-server-rule"
-	prometheusProxyNetworkPolicyName   = "prometheus-proxy-rule"
-	monLabelKey                        = "app"
-	monLabelValue                      = "managed-ocs"
-	rookConfigMapName                  = "rook-ceph-operator-config"
-	k8sMetricsServiceMonitorName       = "k8s-metrics-service-monitor"
-	alertRelabelConfigSecretName       = "managed-ocs-alert-relabel-config-secret"
-	alertRelabelConfigSecretKey        = "alertrelabelconfig.yaml"
-	onboardingValidationKeySecretName  = "onboarding-ticket-key"
-	convergedDeploymentType            = "converged"
-	consumerDeploymentType             = "consumer"
-	providerDeploymentType             = "provider"
-	rhobsRemoteWriteConfigIdSecretKey  = "prom-remote-write-config-id"
-	rhobsRemoteWriteConfigSecretName   = "prom-remote-write-config-secret"
-	prometheusCatalogSourceName        = "prometheus-operator-source"
-	prometheusSubscriptionName         = "downstream-prometheus-operator"
+	managedFusionDeploymentFinalizer  = "managedfusiondeployment.ocs.openshift.io"
+	managedFusionDeploymentName       = "managedfusion"
+	managedFusionDeploymentSecretName = "managed-fusion-config"
+	prometheusName                    = "managed-fusion-prometheus"
+	alertmanagerName                  = "managed-fusion-alertmanager"
+	alertmanagerConfigName            = "managed-fusion-alertmanager-config"
+	deployerCSVPrefix                 = "ocs-osd-deployer"
+	monLabelKey                       = "app"
+	monLabelValue                     = "managed-fusion"
+	prometheusCatalogSourceName       = "prometheus-operator-source"
+	prometheusSubscriptionName        = "downstream-prometheus-operator"
+	alertRelabelConfigSecretName      = "managed-ocs-alert-relabel-config-secret"
+	alertRelabelConfigSecretKey       = "alertrelabelconfig.yaml"
 )
 
 // ManagedOCSReconciler reconciles a ManagedOCS object
@@ -116,47 +73,16 @@ type ManagedOCSReconciler struct {
 	Log                logr.Logger
 	Scheme             *runtime.Scheme
 
-	AddonParamSecretName         string
-	AddonConfigMapName           string
-	AddonConfigMapDeleteLabelKey string
-	PagerdutySecretName          string
-	DeadMansSnitchSecretName     string
-	SMTPSecretName               string
-	SOPEndpoint                  string
-	AlertSMTPFrom                string
-	CustomerNotificationHTMLPath string
-	DeploymentType               string
-	RHOBSSecretName              string
-	RHOBSEndpoint                string
-	RHSSOTokenEndpoint           string
-	AvailableCRDs                map[string]bool
-
 	ctx                            context.Context
-	managedOCS                     *v1.ManagedFusionDeployment
-	storageCluster                 *ocsv1.StorageCluster
-	egressNetworkPolicy            *openshiftv1.EgressNetworkPolicy
-	egressFirewall                 *ovnv1.EgressFirewall
-	ingressNetworkPolicy           *netv1.NetworkPolicy
-	cephIngressNetworkPolicy       *netv1.NetworkPolicy
-	providerAPIServerNetworkPolicy *netv1.NetworkPolicy
-	prometheusProxyNetworkPolicy   *netv1.NetworkPolicy
-	prometheus                     *promv1.Prometheus
-	prometheusService              *corev1.Service
-	dmsRule                        *promv1.PrometheusRule
-	alertmanager                   *promv1.Alertmanager
-	pagerdutySecret                *corev1.Secret
-	deadMansSnitchSecret           *corev1.Secret
-	smtpSecret                     *corev1.Secret
-	alertmanagerConfig             *promv1a1.AlertmanagerConfig
-	alertRelabelConfigSecret       *corev1.Secret
-	k8sMetricsServiceMonitor       *promv1.ServiceMonitor
 	namespace                      string
-	addonParams                    map[string]string
-	onboardingValidationKeySecret  *corev1.Secret
-	prometheusKubeRBACConfigMap    *corev1.ConfigMap
-	rhobsRemoteWriteConfigSecret   *corev1.Secret
+	managedFusionDeployment        *v1alpha1.ManagedFusionDeployment
 	prometheusOperatorSubscription *opv1a1.Subscription
 	prometheusOperatorSource       *opv1a1.CatalogSource
+	prometheus                     *promv1.Prometheus
+	alertmanager                   *promv1.Alertmanager
+	alertmanagerConfig             *promv1a1.AlertmanagerConfig
+	managedFusionDeploymentSecret  *corev1.Secret
+	CustomerNotificationHTMLPath   string
 }
 
 // Add necessary rbac permissions for managedocs finalizer in order to set blockOwnerDeletion.
@@ -190,43 +116,14 @@ func (r *ManagedOCSReconciler) SetupWithManager(mgr ctrl.Manager, ctrlOptions *c
 			MaxConcurrentReconciles: 1,
 		}
 	}
-	managedOCSPredicates := builder.WithPredicates(
+	managedFusionDeploymentPredicates := builder.WithPredicates(
 		predicate.GenerationChangedPredicate{},
 	)
 	secretPredicates := builder.WithPredicates(
 		predicate.NewPredicateFuncs(
 			func(client client.Object) bool {
 				name := client.GetName()
-				return name == r.AddonParamSecretName ||
-					name == r.PagerdutySecretName ||
-					name == r.DeadMansSnitchSecretName ||
-					name == r.SMTPSecretName ||
-					name == r.RHOBSSecretName
-			},
-		),
-	)
-	configMapPredicates := builder.WithPredicates(
-		predicate.NewPredicateFuncs(
-			func(client client.Object) bool {
-				name := client.GetName()
-				if name == r.AddonConfigMapName {
-					if _, ok := client.GetLabels()[r.AddonConfigMapDeleteLabelKey]; ok {
-						return true
-					}
-				} else if name == rookConfigMapName {
-					return true
-				} else if name == utils.IMDSConfigMapName {
-					return true
-				}
-				return false
-			},
-		),
-	)
-	monResourcesPredicates := builder.WithPredicates(
-		predicate.NewPredicateFuncs(
-			func(client client.Object) bool {
-				labels := client.GetLabels()
-				return labels == nil || labels[monLabelKey] != monLabelValue
+				return name == r.managedFusionDeploymentSecret.Name
 			},
 		),
 	)
@@ -239,73 +136,32 @@ func (r *ManagedOCSReconciler) SetupWithManager(mgr ctrl.Manager, ctrlOptions *c
 			},
 		),
 	)
-	prometheusRulesPredicates := builder.WithPredicates(
-		predicate.NewPredicateFuncs(
-			func(client client.Object) bool {
-				labels := client.GetLabels()
-				return labels == nil || labels[monLabelKey] != monLabelValue
-			},
-		),
-	)
-	csvPredicates := builder.WithPredicates(
-		predicate.NewPredicateFuncs(
-			func(client client.Object) bool {
-				return strings.HasPrefix(client.GetName(), ocsOperatorName)
-			},
-		),
-	)
 	enqueueManangedOCSRequest := handler.EnqueueRequestsFromMapFunc(
 		func(client client.Object) []reconcile.Request {
 			return []reconcile.Request{{
 				NamespacedName: types.NamespacedName{
-					Name:      managedOCSName,
+					Name:      managedFusionDeploymentName,
 					Namespace: client.GetNamespace(),
 				},
 			}}
 		},
 	)
 
-	managedOCSController := ctrl.NewControllerManagedBy(mgr).
+	return ctrl.NewControllerManagedBy(mgr).
 		WithOptions(*ctrlOptions).
-		For(&v1.ManagedFusionDeployment{}, managedOCSPredicates).
+		For(&v1.ManagedFusionDeployment{}, managedFusionDeploymentPredicates).
 
 		// Watch owned resources
-		Owns(&ocsv1.StorageCluster{}).
 		Owns(&promv1.Prometheus{}).
 		Owns(&promv1.Alertmanager{}).
 		Owns(&promv1a1.AlertmanagerConfig{}).
-		Owns(&promv1.PrometheusRule{}).
-		Owns(&promv1.ServiceMonitor{}).
-		Owns(&netv1.NetworkPolicy{}).
-		Owns(&corev1.Secret{}).
-		Owns(&corev1.Service{}).
-		Owns(&corev1.ConfigMap{}).
-
+		Owns(&opv1a1.CatalogSource{}).
+		Owns(&opv1a1.Subscription{}).
 		// Watch non-owned resources
 		Watches(
 			&source.Kind{Type: &corev1.Secret{}},
 			enqueueManangedOCSRequest,
 			secretPredicates,
-		).
-		Watches(
-			&source.Kind{Type: &corev1.ConfigMap{}},
-			enqueueManangedOCSRequest,
-			configMapPredicates,
-		).
-		Watches(
-			&source.Kind{Type: &promv1.PodMonitor{}},
-			enqueueManangedOCSRequest,
-			monResourcesPredicates,
-		).
-		Watches(
-			&source.Kind{Type: &promv1.ServiceMonitor{}},
-			enqueueManangedOCSRequest,
-			monResourcesPredicates,
-		).
-		Watches(
-			&source.Kind{Type: &promv1.PrometheusRule{}},
-			enqueueManangedOCSRequest,
-			prometheusRulesPredicates,
 		).
 		Watches(
 			&source.Kind{Type: &appsv1.StatefulSet{}},
@@ -316,21 +172,7 @@ func (r *ManagedOCSReconciler) SetupWithManager(mgr ctrl.Manager, ctrlOptions *c
 			&source.Kind{Type: &ocsv1.OCSInitialization{}},
 			enqueueManangedOCSRequest,
 		).
-		Watches(
-			&source.Kind{Type: &opv1a1.ClusterServiceVersion{}},
-			enqueueManangedOCSRequest,
-			csvPredicates,
-		)
-
-	if r.AvailableCRDs[EgressFirewallCRD] {
-		managedOCSController = managedOCSController.Owns(&ovnv1.EgressFirewall{})
-	}
-	if r.AvailableCRDs[EgressNetworkPolicyCRD] {
-		managedOCSController = managedOCSController.Owns(&openshiftv1.EgressNetworkPolicy{})
-	}
-
-	// Create the controller
-	return managedOCSController.Complete(r)
+		Complete(r)
 }
 
 // Reconcile changes to all owned resource based on the infromation provided by the ManagedOCS resource
@@ -342,12 +184,13 @@ func (r *ManagedOCSReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	r.initReconciler(ctx, req)
 
 	// Load the managed ocs resource (input)
-	if err := r.get(r.managedOCS); err != nil {
+	if err := r.get(r.managedFusionDeployment); err != nil {
 		if errors.IsNotFound(err) {
-			r.Log.V(-1).Info("ManagedOCS resource not found")
-		} else {
-			return ctrl.Result{}, err
+			r.Log.V(-1).Info("ManagedFusionDeployment resource not found")
+			return ctrl.Result{}, nil
 		}
+		r.Log.Error(err, "Failed to get ManagedFusionDeployment")
+		return ctrl.Result{}, fmt.Errorf("failed to get ManagedFusionDeployment: %v", err)
 	}
 
 	// Run the reconcile phases
@@ -358,8 +201,8 @@ func (r *ManagedOCSReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 
 	// Ensure status is updated once even on failed reconciles
 	var statusErr error
-	if r.managedOCS.UID != "" {
-		statusErr = r.Client.Status().Update(r.ctx, r.managedOCS)
+	if r.managedFusionDeployment.UID != "" {
+		statusErr = r.Client.Status().Update(r.ctx, r.managedFusionDeployment)
 	}
 
 	// Reconcile errors have priority to status update errors
@@ -375,92 +218,10 @@ func (r *ManagedOCSReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 func (r *ManagedOCSReconciler) initReconciler(ctx context.Context, req ctrl.Request) {
 	r.ctx = ctx
 	r.namespace = req.NamespacedName.Namespace
-	r.addonParams = make(map[string]string)
-	r.DeploymentType = strings.ToLower(r.DeploymentType)
 
-	r.managedOCS = &v1.ManagedFusionDeployment{}
-	r.managedOCS.Name = req.NamespacedName.Name
-	r.managedOCS.Namespace = r.namespace
-
-	r.storageCluster = &ocsv1.StorageCluster{}
-	r.storageCluster.Name = storageClusterName
-	r.storageCluster.Namespace = r.namespace
-
-	r.egressNetworkPolicy = &openshiftv1.EgressNetworkPolicy{}
-	r.egressNetworkPolicy.Name = egressNetworkPolicyName
-	r.egressNetworkPolicy.Namespace = r.namespace
-
-	r.egressFirewall = &ovnv1.EgressFirewall{}
-	r.egressFirewall.Name = egressFirewallName
-	r.egressFirewall.Namespace = r.namespace
-
-	r.ingressNetworkPolicy = &netv1.NetworkPolicy{}
-	r.ingressNetworkPolicy.Name = ingressNetworkPolicyName
-	r.ingressNetworkPolicy.Namespace = r.namespace
-
-	r.cephIngressNetworkPolicy = &netv1.NetworkPolicy{}
-	r.cephIngressNetworkPolicy.Name = cephIngressNetworkPolicyName
-	r.cephIngressNetworkPolicy.Namespace = r.namespace
-
-	r.providerAPIServerNetworkPolicy = &netv1.NetworkPolicy{}
-	r.providerAPIServerNetworkPolicy.Name = providerApiServerNetworkPolicyName
-	r.providerAPIServerNetworkPolicy.Namespace = r.namespace
-
-	r.prometheusProxyNetworkPolicy = &netv1.NetworkPolicy{}
-	r.prometheusProxyNetworkPolicy.Name = prometheusProxyNetworkPolicyName
-	r.prometheusProxyNetworkPolicy.Namespace = r.namespace
-
-	r.prometheus = &promv1.Prometheus{}
-	r.prometheus.Name = prometheusName
-	r.prometheus.Namespace = r.namespace
-
-	r.prometheusService = &corev1.Service{}
-	r.prometheusService.Name = prometheusServiceName
-	r.prometheusService.Namespace = r.namespace
-
-	r.dmsRule = &promv1.PrometheusRule{}
-	r.dmsRule.Name = dmsRuleName
-	r.dmsRule.Namespace = r.namespace
-
-	r.alertmanager = &promv1.Alertmanager{}
-	r.alertmanager.Name = alertmanagerName
-	r.alertmanager.Namespace = r.namespace
-
-	r.pagerdutySecret = &corev1.Secret{}
-	r.pagerdutySecret.Name = r.PagerdutySecretName
-	r.pagerdutySecret.Namespace = r.namespace
-
-	r.smtpSecret = &corev1.Secret{}
-	r.smtpSecret.Name = r.SMTPSecretName
-	r.smtpSecret.Namespace = r.namespace
-
-	r.deadMansSnitchSecret = &corev1.Secret{}
-	r.deadMansSnitchSecret.Name = r.DeadMansSnitchSecretName
-	r.deadMansSnitchSecret.Namespace = r.namespace
-
-	r.alertmanagerConfig = &promv1a1.AlertmanagerConfig{}
-	r.alertmanagerConfig.Name = alertmanagerConfigName
-	r.alertmanagerConfig.Namespace = r.namespace
-
-	r.k8sMetricsServiceMonitor = &promv1.ServiceMonitor{}
-	r.k8sMetricsServiceMonitor.Name = k8sMetricsServiceMonitorName
-	r.k8sMetricsServiceMonitor.Namespace = r.namespace
-
-	r.alertRelabelConfigSecret = &corev1.Secret{}
-	r.alertRelabelConfigSecret.Name = alertRelabelConfigSecretName
-	r.alertRelabelConfigSecret.Namespace = r.namespace
-
-	r.onboardingValidationKeySecret = &corev1.Secret{}
-	r.onboardingValidationKeySecret.Name = onboardingValidationKeySecretName
-	r.onboardingValidationKeySecret.Namespace = r.namespace
-
-	r.prometheusKubeRBACConfigMap = &corev1.ConfigMap{}
-	r.prometheusKubeRBACConfigMap.Name = templates.PrometheusKubeRBACPoxyConfigMapName
-	r.prometheusKubeRBACConfigMap.Namespace = r.namespace
-
-	r.rhobsRemoteWriteConfigSecret = &corev1.Secret{}
-	r.rhobsRemoteWriteConfigSecret.Name = r.RHOBSSecretName
-	r.rhobsRemoteWriteConfigSecret.Namespace = r.namespace
+	r.managedFusionDeployment = &v1alpha1.ManagedFusionDeployment{}
+	r.managedFusionDeployment.Name = managedFusionDeploymentName
+	r.managedFusionDeployment.Namespace = r.namespace
 
 	r.prometheusOperatorSource = &opv1a1.CatalogSource{}
 	r.prometheusOperatorSource.Name = prometheusCatalogSourceName
@@ -469,6 +230,22 @@ func (r *ManagedOCSReconciler) initReconciler(ctx context.Context, req ctrl.Requ
 	r.prometheusOperatorSubscription = &opv1a1.Subscription{}
 	r.prometheusOperatorSubscription.Name = prometheusSubscriptionName
 	r.prometheusOperatorSubscription.Namespace = r.namespace
+
+	r.prometheus = &promv1.Prometheus{}
+	r.prometheus.Name = prometheusName
+	r.prometheus.Namespace = r.namespace
+
+	r.alertmanager = &promv1.Alertmanager{}
+	r.alertmanager.Name = alertmanagerName
+	r.alertmanager.Namespace = r.namespace
+
+	r.alertmanagerConfig = &promv1a1.AlertmanagerConfig{}
+	r.alertmanagerConfig.Name = alertmanagerConfigName
+	r.alertmanagerConfig.Namespace = r.namespace
+
+	r.managedFusionDeploymentSecret = &corev1.Secret{}
+	r.managedFusionDeploymentSecret.Name = managedFusionDeploymentSecretName
+	r.managedFusionDeploymentSecret.Namespace = r.namespace
 }
 
 func (r *ManagedOCSReconciler) reconcilePhases() (reconcile.Result, error) {
@@ -479,16 +256,16 @@ func (r *ManagedOCSReconciler) reconcilePhases() (reconcile.Result, error) {
 	// Update the status of the components
 	r.updateComponentStatus()
 
-	if !r.managedOCS.DeletionTimestamp.IsZero() {
+	if !r.managedFusionDeployment.DeletionTimestamp.IsZero() {
 		if !r.areComponentsReadyForUninstall() {
 			r.Log.Info("Sub-components are not in ready state, cannot proceed with uninstallation")
 			return ctrl.Result{Requeue: true, RequeueAfter: 10 * time.Second}, nil
 		}
 
-		r.Log.Info("removing finalizer from the ManagedOCS resource")
-		r.managedOCS.SetFinalizers(utils.Remove(r.managedOCS.GetFinalizers(), ManagedOCSFinalizer))
-		if err := r.Client.Update(r.ctx, r.managedOCS); err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to remove finalizer from managedOCS: %v", err)
+		r.Log.Info("removing finalizer from the ManagedFusionDeployment resource")
+		r.managedFusionDeployment.SetFinalizers(utils.Remove(r.managedFusionDeployment.GetFinalizers(), managedFusionDeploymentFinalizer))
+		if err := r.Client.Update(r.ctx, r.managedFusionDeployment); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to remove finalizer from managedFusionDeployment: %v", err)
 		}
 		r.Log.Info("finallizer removed successfully")
 
@@ -496,12 +273,12 @@ func (r *ManagedOCSReconciler) reconcilePhases() (reconcile.Result, error) {
 			return ctrl.Result{}, fmt.Errorf("failed to remove agent CSV: %v", err)
 		}
 
-	} else if r.managedOCS.UID != "" {
-		if !utils.Contains(r.managedOCS.GetFinalizers(), ManagedOCSFinalizer) {
-			r.Log.V(-1).Info("finalizer missing on the managedOCS resource, adding...")
-			r.managedOCS.SetFinalizers(append(r.managedOCS.GetFinalizers(), ManagedOCSFinalizer))
-			if err := r.update(r.managedOCS); err != nil {
-				return ctrl.Result{}, fmt.Errorf("failed to update managedOCS with finalizer: %v", err)
+	} else if r.managedFusionDeployment.UID != "" {
+		if !utils.Contains(r.managedFusionDeployment.GetFinalizers(), managedFusionDeploymentFinalizer) {
+			r.Log.V(-1).Info("finalizer missing on the managedFusionDeployment resource, adding...")
+			r.managedFusionDeployment.SetFinalizers(append(r.managedFusionDeployment.GetFinalizers(), managedFusionDeploymentFinalizer))
+			if err := r.update(r.managedFusionDeployment); err != nil {
+				return ctrl.Result{}, fmt.Errorf("failed to update managedFusionDeployment with finalizer: %v", err)
 			}
 		}
 
@@ -529,23 +306,8 @@ func (r *ManagedOCSReconciler) reconcilePhases() (reconcile.Result, error) {
 }
 
 func (r *ManagedOCSReconciler) updateComponentStatus() {
-	// Getting the status of the StorageCluster component.
-	scStatus := &r.managedOCS.Status.Components.StorageCluster
-	if err := r.get(r.storageCluster); err == nil {
-		if r.storageCluster.Status.Phase == "Ready" {
-			scStatus.State = v1.ComponentReady
-		} else {
-			scStatus.State = v1.ComponentPending
-		}
-	} else if errors.IsNotFound(err) {
-		scStatus.State = v1.ComponentNotFound
-	} else {
-		r.Log.V(-1).Info("error getting StorageCluster, setting compoment status to Unknown")
-		scStatus.State = v1.ComponentUnknown
-	}
-
 	// Getting the status of the Prometheus component.
-	promStatus := &r.managedOCS.Status.Components.Prometheus
+	promStatus := &r.managedFusionDeployment.Status.Components.Prometheus
 	if err := r.get(r.prometheus); err == nil {
 		promStatefulSet := &appsv1.StatefulSet{}
 		promStatefulSet.Namespace = r.namespace
@@ -571,7 +333,7 @@ func (r *ManagedOCSReconciler) updateComponentStatus() {
 	}
 
 	// Getting the status of the Alertmanager component.
-	amStatus := &r.managedOCS.Status.Components.Alertmanager
+	amStatus := &r.managedFusionDeployment.Status.Components.Alertmanager
 	if err := r.get(r.alertmanager); err == nil {
 		amStatefulSet := &appsv1.StatefulSet{}
 		amStatefulSet.Namespace = r.namespace
@@ -595,310 +357,6 @@ func (r *ManagedOCSReconciler) updateComponentStatus() {
 		r.Log.V(-1).Info("error getting Alertmanager, setting compoment status to Unknown")
 		amStatus.State = v1.ComponentUnknown
 	}
-}
-
-func (r *ManagedOCSReconciler) verifyComponentsDoNotExist() bool {
-	subComponent := r.managedOCS.Status.Components
-
-	return subComponent.StorageCluster.State == v1.ComponentNotFound
-}
-
-func (r *ManagedOCSReconciler) reconcileStorageCluster() error {
-	r.Log.Info("Reconciling StorageCluster")
-
-	_, err := ctrl.CreateOrUpdate(r.ctx, r.Client, r.storageCluster, func() error {
-		if err := r.own(r.storageCluster); err != nil {
-			return err
-		}
-
-		// Handle only strict mode reconciliation
-
-		var desired *ocsv1.StorageCluster = nil
-		switch r.DeploymentType {
-		case convergedDeploymentType:
-			var err error
-			if desired, err = r.getDesiredConvergedStorageCluster(); err != nil {
-				return err
-			}
-		case consumerDeploymentType:
-			var err error
-			if desired, err = r.getDesiredConsumerStorageCluster(); err != nil {
-				return err
-			}
-		case providerDeploymentType:
-			var err error
-			if desired, err = r.getDesiredProviderStorageCluster(); err != nil {
-				return err
-			}
-		default:
-			return fmt.Errorf("Invalid deployment type value: %v", r.DeploymentType)
-		}
-		// Override storage cluster spec with desired spec from the template.
-		// We do not replace meta or status on purpose
-		r.storageCluster.Spec = desired.Spec
-		return nil
-	})
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func (r *ManagedOCSReconciler) getDesiredConvergedStorageCluster() (*ocsv1.StorageCluster, error) {
-	sizeAsString := r.addonParams[storageSizeKey]
-
-	// Setting hardcoded value here to force no MCG deployment
-	enableMCGAsString := "false"
-	if enableMCGRaw, exists := r.addonParams[enableMCGKey]; exists {
-		enableMCGAsString = enableMCGRaw
-	}
-
-	r.Log.Info("Requested add-on settings", storageSizeKey, sizeAsString, enableMCGKey, enableMCGAsString)
-	desiredDeviceSetCount, err := strconv.Atoi(sizeAsString)
-	if err != nil {
-		return nil, fmt.Errorf("Invalid storage cluster size value: %v", sizeAsString)
-	}
-
-	// Get the storage device set count of the current storage cluster
-	currDeviceSetCount := 0
-	if desiredStorageDeviceSet := findStorageDeviceSet(r.storageCluster.Spec.StorageDeviceSets, deviceSetName); desiredStorageDeviceSet != nil {
-		currDeviceSetCount = desiredStorageDeviceSet.Count
-	}
-
-	// Get the desired storage device set from storage cluster template
-	sc := templates.ConvergedStorageClusterTemplate.DeepCopy()
-	var ds *ocsv1.StorageDeviceSet = nil
-	if desiredStorageDeviceSet := findStorageDeviceSet(sc.Spec.StorageDeviceSets, deviceSetName); desiredStorageDeviceSet != nil {
-		ds = desiredStorageDeviceSet
-	}
-
-	// Prevent downscaling by comparing count from secret and count from storage cluster
-	r.setDeviceSetCount(ds, desiredDeviceSetCount, currDeviceSetCount)
-
-	// Check and enable MCG in Storage Cluster spec
-	mcgEnable, err := strconv.ParseBool(enableMCGAsString)
-	if err != nil {
-		return nil, fmt.Errorf("Invalid Enable MCG value: %v", enableMCGAsString)
-	}
-	if err := r.ensureMCGDeployment(sc, mcgEnable); err != nil {
-		return nil, err
-	}
-
-	return sc, nil
-}
-
-func (r *ManagedOCSReconciler) getDesiredProviderStorageCluster() (*ocsv1.StorageCluster, error) {
-	sizeAsString := r.addonParams[storageSizeKey]
-
-	// Setting hardcoded value here to force no MCG deployment
-	enableMCGAsString := "false"
-	if enableMCGRaw, exists := r.addonParams[enableMCGKey]; exists {
-		enableMCGAsString = enableMCGRaw
-	}
-	r.Log.Info("Requested add-on settings", storageSizeKey, sizeAsString, enableMCGKey, enableMCGAsString)
-	desiredSize, err := strconv.Atoi(sizeAsString)
-	if err != nil {
-		return nil, fmt.Errorf("Invalid storage cluster size value: %v", sizeAsString)
-	}
-
-	// Convert the desired size to the device set count based on the underlaying OSD size
-	desiredDeviceSetCount := int(math.Ceil(float64(desiredSize) / templates.ProviderOSDSizeInTiB))
-
-	// Get the storage device set count of the current storage cluster
-	currDeviceSetCount := 0
-	if desiredStorageDeviceSet := findStorageDeviceSet(r.storageCluster.Spec.StorageDeviceSets, deviceSetName); desiredStorageDeviceSet != nil {
-		currDeviceSetCount = desiredStorageDeviceSet.Count
-	}
-
-	// Get the desired storage device set from storage cluster template
-	sc := templates.ProviderStorageClusterTemplate.DeepCopy()
-	var ds *ocsv1.StorageDeviceSet = nil
-	if desiredStorageDeviceSet := findStorageDeviceSet(sc.Spec.StorageDeviceSets, deviceSetName); desiredStorageDeviceSet != nil {
-		ds = desiredStorageDeviceSet
-	}
-
-	// Prevent downscaling by comparing count from secret and count from storage cluster
-	r.setDeviceSetCount(ds, desiredDeviceSetCount, currDeviceSetCount)
-
-	// Check and enable MCG in Storage Cluster spec
-	mcgEnable, err := strconv.ParseBool(enableMCGAsString)
-	if err != nil {
-		return nil, fmt.Errorf("Invalid Enable MCG value: %v", enableMCGAsString)
-	}
-	if err := r.ensureMCGDeployment(sc, mcgEnable); err != nil {
-		return nil, err
-	}
-
-	return sc, nil
-}
-
-func (r *ManagedOCSReconciler) getDesiredConsumerStorageCluster() (*ocsv1.StorageCluster, error) {
-	storageSize := r.addonParams[storageSizeKey]
-	storageUnit := r.addonParams[storageUnitKey]
-	onboardingTicket := r.addonParams[onboardingTicketKey]
-	storageProviderEndpoint := r.addonParams[storageProviderEndpointKey]
-
-	// Setting hardcoded value here to force no MCG deployment
-	enableMCGAsString := "false"
-	if enableMCGRaw, exists := r.addonParams[enableMCGKey]; exists {
-		enableMCGAsString = enableMCGRaw
-	}
-
-	r.Log.Info("Requested add-on settings", storageSizeKey, storageSize, storageUnitKey, storageUnit, enableMCGKey, enableMCGAsString,
-		onboardingTicketKey, onboardingTicket, storageProviderEndpointKey, storageProviderEndpoint)
-
-	sizeAsString := storageSize + storageUnit
-	requestedCapacity, err := resource.ParseQuantity(sizeAsString)
-	// Check if the requested capacity is valid
-	if err != nil || requestedCapacity.Sign() == -1 {
-		return nil, fmt.Errorf("Invalid storage cluster capacity value: %v", sizeAsString)
-	}
-
-	sc := templates.ConsumerStorageClusterTemplate.DeepCopy()
-	externalStorageSpec := &sc.Spec.ExternalStorage
-	externalStorageSpec.OnboardingTicket = onboardingTicket
-	externalStorageSpec.StorageProviderEndpoint = storageProviderEndpoint
-	externalStorageSpec.RequestedCapacity = &requestedCapacity
-
-	// Check and enable MCG in Storage Cluster spec
-	mcgEnable, err := strconv.ParseBool(enableMCGAsString)
-	if err != nil {
-		return nil, fmt.Errorf("Invalid Enable MCG value: %v", enableMCGAsString)
-	}
-	if err := r.ensureMCGDeployment(sc, mcgEnable); err != nil {
-		return nil, err
-	}
-
-	return sc, nil
-}
-
-func (r *ManagedOCSReconciler) reconcileOnboardingValidationSecret() error {
-	if r.DeploymentType != providerDeploymentType {
-		r.Log.Info("Non provider deployment, skipping reconcile for onboarding validation secret")
-		return nil
-	}
-	r.Log.Info("Reconciling onboardingValidationKeySecret")
-	_, err := ctrl.CreateOrUpdate(r.ctx, r.Client, r.onboardingValidationKeySecret, func() error {
-		if err := r.own(r.onboardingValidationKeySecret); err != nil {
-			return err
-		}
-		onboardingValidationData := fmt.Sprintf(
-			"-----BEGIN PUBLIC KEY-----\n%s\n-----END PUBLIC KEY-----",
-			strings.TrimSpace(r.addonParams[onboardingValidationKey]),
-		)
-		r.onboardingValidationKeySecret.Data = map[string][]byte{
-			"key": []byte(onboardingValidationData),
-		}
-		return nil
-	})
-	if err != nil {
-		return fmt.Errorf("Failed to update onboardingValidationKeySecret: %v", err)
-	}
-	return nil
-}
-
-// AlertRelabelConfigSecret will have configuration for relabeling the alerts that are firing.
-// It will add namespace label to firing alerts before they are sent to the alertmanager
-func (r *ManagedOCSReconciler) reconcileAlertRelabelConfigSecret() error {
-	r.Log.Info("Reconciling alertRelabelConfigSecret")
-
-	_, err := ctrl.CreateOrUpdate(r.ctx, r.Client, r.alertRelabelConfigSecret, func() error {
-		if err := r.own(r.alertRelabelConfigSecret); err != nil {
-			return err
-		}
-
-		alertRelabelConfig := []struct {
-			SourceLabels []string `yaml:"source_labels"`
-			TargetLabel  string   `yaml:"target_label,omitempty"`
-			Replacement  string   `yaml:"replacement,omitempty"`
-		}{
-			{
-				SourceLabels: []string{"namespace"},
-				TargetLabel:  "alertnamespace",
-			},
-			{
-				TargetLabel: "namespace",
-				Replacement: r.namespace,
-			},
-		}
-
-		config, err := yaml.Marshal(alertRelabelConfig)
-		if err != nil {
-			return fmt.Errorf("Unable to encode alert relabel conifg: %v", err)
-		}
-
-		r.alertRelabelConfigSecret.Data = map[string][]byte{
-			alertRelabelConfigSecretKey: config,
-		}
-
-		return nil
-	})
-
-	if err != nil {
-		return fmt.Errorf("Unable to create/update AlertRelabelConfigSecret: %v", err)
-	}
-
-	return nil
-}
-
-func (r *ManagedOCSReconciler) reconcilePrometheusKubeRBACConfigMap() error {
-	r.Log.Info("Reconciling kubeRBACConfigMap")
-
-	_, err := ctrl.CreateOrUpdate(r.ctx, r.Client, r.prometheusKubeRBACConfigMap, func() error {
-		if err := r.own(r.prometheusKubeRBACConfigMap); err != nil {
-			return err
-		}
-
-		r.prometheusKubeRBACConfigMap.Data = templates.KubeRBACProxyConfigMap.DeepCopy().Data
-
-		return nil
-	})
-
-	if err != nil {
-		return fmt.Errorf("unable to create kubeRBACConfig config map: %v", err)
-	}
-
-	return nil
-}
-
-// reconcilePrometheusService function wait for prometheus Service
-// to start and sets appropriate annotation for 'service-ca' controller
-func (r *ManagedOCSReconciler) reconcilePrometheusService() error {
-	r.Log.Info("Reconciling PrometheusService")
-
-	_, err := ctrl.CreateOrUpdate(r.ctx, r.Client, r.prometheusService, func() error {
-		if err := r.own(r.prometheusService); err != nil {
-			return err
-		}
-
-		r.prometheusService.Spec.Ports = []corev1.ServicePort{
-			{
-				Name:       "https",
-				Protocol:   corev1.ProtocolTCP,
-				Port:       int32(templates.KubeRBACProxyPortNumber),
-				TargetPort: intstr.FromString("https"),
-			},
-		}
-		r.prometheusService.Spec.Selector = map[string]string{
-			"app.kubernetes.io/name": r.prometheusService.Name,
-		}
-		utils.AddAnnotation(
-			r.prometheusService,
-			"service.beta.openshift.io/serving-cert-secret-name",
-			templates.PrometheusServingCertSecretName,
-		)
-		utils.AddAnnotation(
-			r.prometheusService,
-			"service.alpha.openshift.io/serving-cert-secret-name",
-			templates.PrometheusServingCertSecretName,
-		)
-		// This label is required to enable us to use metrics federation
-		// mechanism provided by Managed-tenants
-		utils.AddLabel(r.prometheusService, monLabelKey, monLabelValue)
-		return nil
-	})
-	return err
 }
 
 func (r *ManagedOCSReconciler) reconcilePrometheusOperatorSource() error {
@@ -1027,96 +485,12 @@ func (r *ManagedOCSReconciler) reconcilePrometheus() error {
 			},
 			Key: alertRelabelConfigSecretKey,
 		}
-		if r.DeploymentType != convergedDeploymentType {
-			if err := r.get(r.rhobsRemoteWriteConfigSecret); err != nil && !errors.IsNotFound(err) {
-				return err
-			}
-			if r.rhobsRemoteWriteConfigSecret.UID != "" {
-				rhobsSecretData := r.rhobsRemoteWriteConfigSecret.Data
-				if _, found := rhobsSecretData[rhobsRemoteWriteConfigIdSecretKey]; !found {
-					return fmt.Errorf("rhobs secret does not contain a value for key %v", rhobsRemoteWriteConfigIdSecretKey)
-				}
-				if _, found := rhobsSecretData[rhobsRemoteWriteConfigSecretName]; !found {
-					return fmt.Errorf("rhobs secret does not contain a value for key %v", rhobsRemoteWriteConfigSecretName)
-				}
-				rhobsAudience, found := rhobsSecretData["rhobs-audience"]
-				if !found {
-					return fmt.Errorf("rhobs secret does not contain a value for key rhobs-audience")
-				}
-				remoteWriteSpec := &r.prometheus.Spec.RemoteWrite[0]
-				remoteWriteSpec.URL = r.RHOBSEndpoint
-				remoteWriteSpec.OAuth2.ClientID.Secret.LocalObjectReference.Name = r.RHOBSSecretName
-				remoteWriteSpec.OAuth2.ClientID.Secret.Key = rhobsRemoteWriteConfigIdSecretKey
-				remoteWriteSpec.OAuth2.ClientSecret.LocalObjectReference.Name = r.RHOBSSecretName
-				remoteWriteSpec.OAuth2.ClientSecret.Key = rhobsRemoteWriteConfigSecretName
-				remoteWriteSpec.OAuth2.TokenURL = r.RHSSOTokenEndpoint
-				remoteWriteSpec.OAuth2.EndpointParams["audience"] = string(rhobsAudience)
-			} else {
-				r.Log.Info("RHOBS remote write config secret not found , disabling remote write")
-				r.prometheus.Spec.RemoteWrite = nil
-			}
-		} else {
-			// removing remote write spec for converged clusters
-			r.prometheus.Spec.RemoteWrite = nil
-		}
 		return nil
 	})
 	if err != nil {
 		return fmt.Errorf("Failed to update Prometheus: %v", err)
 	}
 
-	return nil
-}
-
-func (r *ManagedOCSReconciler) reconcileDMSPrometheusRule() error {
-	r.Log.Info("Reconciling DMS Prometheus Rule")
-
-	_, err := ctrl.CreateOrUpdate(r.ctx, r.Client, r.dmsRule, func() error {
-		if err := r.own(r.dmsRule); err != nil {
-			return err
-		}
-
-		desired := templates.DMSPrometheusRuleTemplate.DeepCopy()
-
-		for _, group := range desired.Spec.Groups {
-			if group.Name == "snitch-alert" {
-				for _, rule := range group.Rules {
-					if rule.Alert == "DeadMansSnitch" {
-						rule.Labels["namespace"] = r.namespace
-					}
-				}
-			}
-		}
-
-		r.dmsRule.Spec = desired.Spec
-
-		return nil
-	})
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func (r *ManagedOCSReconciler) reconcileOCSInitialization() error {
-	r.Log.Info("Reconciling OCSInitialization")
-
-	ocsInitList := ocsv1.OCSInitializationList{}
-	if err := r.list(&ocsInitList); err != nil {
-		return fmt.Errorf("Could to list OCSInitialization resources: %v", err)
-	}
-	if len(ocsInitList.Items) == 0 {
-		r.Log.V(-1).Info("OCSInitialization resource not found")
-	} else {
-		obj := &ocsInitList.Items[0]
-		if !obj.Spec.EnableCephTools {
-			obj.Spec.EnableCephTools = true
-			if err := r.update(obj); err != nil {
-				return err
-			}
-		}
-	}
 	return nil
 }
 
@@ -1145,73 +519,57 @@ func (r *ManagedOCSReconciler) reconcileAlertmanager() error {
 }
 
 func (r *ManagedOCSReconciler) reconcileAlertmanagerConfig() error {
-	r.Log.Info("Reconciling AlertmanagerConfig secret")
+	r.Log.Info("Reconciling AlertmanagerConfig")
 
 	_, err := ctrl.CreateOrUpdate(r.ctx, r.Client, r.alertmanagerConfig, func() error {
 		if err := r.own(r.alertmanagerConfig); err != nil {
 			return err
 		}
 
-		if err := r.get(r.pagerdutySecret); err != nil {
-			return fmt.Errorf("Unable to get pagerduty secret: %v", err)
-		}
-		pagerdutySecretData := r.pagerdutySecret.Data
-		pagerdutyServiceKey := string(pagerdutySecretData["PAGERDUTY_KEY"])
-		if pagerdutyServiceKey == "" {
-			return fmt.Errorf("Pagerduty secret does not contain a PAGERDUTY_KEY entry")
-		}
-
-		if r.deadMansSnitchSecret.UID == "" {
-			if err := r.get(r.deadMansSnitchSecret); err != nil {
-				return fmt.Errorf("Unable to get DeadMan's Snitch secret: %v", err)
-			}
-		}
-		dmsURL := string(r.deadMansSnitchSecret.Data["SNITCH_URL"])
-		if dmsURL == "" {
-			return fmt.Errorf("DeadMan's Snitch secret does not contain a SNITCH_URL entry")
+		managedFusionDeploymentSpec := r.managedFusionDeployment.Spec
+		if managedFusionDeploymentSpec.Pager.SOPEndpoint == "" {
+			return fmt.Errorf("managedFusionDeployment CR does not contain a SOPEndpoint entry")
 		}
 
 		alertingAddressList := []string{}
-		i := 0
-		for {
-			alertingAddressKey := fmt.Sprintf("%s-%v", notificationEmailKeyPrefix, i)
-			alertingAddress, found := r.addonParams[alertingAddressKey]
-			i++
-			if found {
-				alertingAddressAsString := alertingAddress
-				if alertingAddressAsString != "" {
-					alertingAddressList = append(alertingAddressList, alertingAddressAsString)
-				}
-			} else {
-				break
-			}
+		alertingAddressList = append(alertingAddressList,
+			managedFusionDeploymentSpec.SMTP.NotificationEmails...)
+		if managedFusionDeploymentSpec.SMTP.Username == "" {
+			return fmt.Errorf("managedFusionDeployment CR does not contain a username entry")
 		}
-
-		if r.smtpSecret.UID == "" {
-			if err := r.get(r.smtpSecret); err != nil {
-				return fmt.Errorf("Unable to get SMTP secret: %v", err)
-			}
+		if managedFusionDeploymentSpec.SMTP.Endpoint == "" {
+			return fmt.Errorf("managedFusionDeployment CR does not contain a endpoint entry")
 		}
-		smtpSecretData := r.smtpSecret.Data
-		smtpHost := string(smtpSecretData["host"])
-		if smtpHost == "" {
-			return fmt.Errorf("smtp secret does not contain a host entry")
-		}
-		smtpPort := string(smtpSecretData["port"])
-		if smtpPort == "" {
-			return fmt.Errorf("smtp secret does not contain a port entry")
-		}
-		smtpUsername := string(smtpSecretData["username"])
-		if smtpUsername == "" {
-			return fmt.Errorf("smtp secret does not contain a username entry")
-		}
-		smtpPassword := string(smtpSecretData["password"])
-		if smtpPassword == "" {
-			return fmt.Errorf("smtp secret does not contain a password entry")
+		if managedFusionDeploymentSpec.SMTP.FromAddress == "" {
+			return fmt.Errorf("managedFusionDeployment CR does not contain a fromAddress entry")
 		}
 		smtpHTML, err := ioutil.ReadFile(r.CustomerNotificationHTMLPath)
 		if err != nil {
 			return fmt.Errorf("unable to read customernotification.html file: %v", err)
+		}
+
+		// if r.managedFusionDeploymentSecret.UID == "" {
+		if err := r.get(r.managedFusionDeploymentSecret); err != nil {
+			return fmt.Errorf("unable to get managed-fusion-config secret: %v", err)
+		}
+		// }
+		managedFusionDeploymentSecretData := r.managedFusionDeploymentSecret.Data
+		pagerdutyServiceKey, found := managedFusionDeploymentSecretData["pagerKey"]
+		if !found {
+			return fmt.Errorf("managedFusionDeploymentSecret does not contain a pagerKey entry")
+		} else {
+			if string(pagerdutyServiceKey) == "" {
+				return fmt.Errorf("managedFusionDeploymentSecret contains an empty pagerKey entry")
+			}
+		}
+
+		smtpPassword, found := managedFusionDeploymentSecretData["smtpPassword"]
+		if !found {
+			return fmt.Errorf("managedFusionDeploymentSecret does not contain a smtpPassword entry")
+		} else {
+			if string(smtpPassword) == "" {
+				return fmt.Errorf("managedFusionDeploymentSecret contains an empty smtpPassword entry")
+			}
 		}
 
 		desired := templates.AlertmanagerConfigTemplate.DeepCopy()
@@ -1219,19 +577,17 @@ func (r *ManagedOCSReconciler) reconcileAlertmanagerConfig() error {
 			receiver := &desired.Spec.Receivers[i]
 			switch receiver.Name {
 			case "pagerduty":
-				receiver.PagerDutyConfigs[0].ServiceKey.Key = "PAGERDUTY_KEY"
-				receiver.PagerDutyConfigs[0].ServiceKey.LocalObjectReference.Name = r.PagerdutySecretName
+				receiver.PagerDutyConfigs[0].ServiceKey.Key = "pagerKey"
+				receiver.PagerDutyConfigs[0].ServiceKey.LocalObjectReference.Name = r.managedFusionDeploymentSecret.Name
 				receiver.PagerDutyConfigs[0].Details[0].Key = "SOP"
-				receiver.PagerDutyConfigs[0].Details[0].Value = r.SOPEndpoint
-			case "DeadMansSnitch":
-				receiver.WebhookConfigs[0].URL = &dmsURL
+				receiver.PagerDutyConfigs[0].Details[0].Value = managedFusionDeploymentSpec.Pager.SOPEndpoint
 			case "SendGrid":
 				if len(alertingAddressList) > 0 {
-					receiver.EmailConfigs[0].Smarthost = fmt.Sprintf("%s:%s", smtpHost, smtpPort)
-					receiver.EmailConfigs[0].AuthUsername = smtpUsername
-					receiver.EmailConfigs[0].AuthPassword.LocalObjectReference.Name = r.SMTPSecretName
-					receiver.EmailConfigs[0].AuthPassword.Key = "password"
-					receiver.EmailConfigs[0].From = r.AlertSMTPFrom
+					receiver.EmailConfigs[0].Smarthost = managedFusionDeploymentSpec.SMTP.Endpoint
+					receiver.EmailConfigs[0].AuthUsername = managedFusionDeploymentSpec.SMTP.Username
+					receiver.EmailConfigs[0].AuthPassword.LocalObjectReference.Name = r.managedFusionDeploymentSecret.Name
+					receiver.EmailConfigs[0].AuthPassword.Key = "smtpPassword"
+					receiver.EmailConfigs[0].From = managedFusionDeploymentSpec.SMTP.FromAddress
 					receiver.EmailConfigs[0].To = strings.Join(alertingAddressList, ", ")
 					receiver.EmailConfigs[0].HTML = string(smtpHTML)
 				} else {
@@ -1249,659 +605,19 @@ func (r *ManagedOCSReconciler) reconcileAlertmanagerConfig() error {
 	return err
 }
 
-func (r *ManagedOCSReconciler) reconcileK8SMetricsServiceMonitor() error {
-	r.Log.Info("Reconciling k8sMetricsServiceMonitor")
-
-	_, err := ctrl.CreateOrUpdate(r.ctx, r.Client, r.k8sMetricsServiceMonitor, func() error {
-		if err := r.own(r.k8sMetricsServiceMonitor); err != nil {
-			return err
-		}
-		desired := templates.K8sMetricsServiceMonitorTemplate.DeepCopy()
-		r.k8sMetricsServiceMonitor.Spec = desired.Spec
-		return nil
-	})
-	if err != nil {
-		return fmt.Errorf("Failed to update k8sMetricsServiceMonitor: %v", err)
-	}
-	return nil
-}
-
-// reconcileMonitoringResources labels all monitoring resources (ServiceMonitors, PodMonitors, and PrometheusRules)
-// found in the target namespace with a label that matches the label selector the defined on the Prometheus resource
-// we are reconciling in reconcilePrometheus. Doing so instructs the Prometheus instance to notice and react to these labeled
-// monitoring resources
-func (r *ManagedOCSReconciler) reconcileMonitoringResources() error {
-	r.Log.Info("reconciling monitoring resources")
-
-	podMonitorList := promv1.PodMonitorList{}
-	if err := r.list(&podMonitorList); err != nil {
-		return fmt.Errorf("Could not list pod monitors: %v", err)
-	}
-	for i := range podMonitorList.Items {
-		obj := podMonitorList.Items[i]
-		utils.AddLabel(obj, monLabelKey, monLabelValue)
-		if err := r.update(obj); err != nil {
-			return err
-		}
-	}
-
-	serviceMonitorList := promv1.ServiceMonitorList{}
-	if err := r.list(&serviceMonitorList); err != nil {
-		return fmt.Errorf("Could not list service monitors: %v", err)
-	}
-	for i := range serviceMonitorList.Items {
-		obj := serviceMonitorList.Items[i]
-		utils.AddLabel(obj, monLabelKey, monLabelValue)
-		if err := r.update(obj); err != nil {
-			return err
-		}
-	}
-
-	promRuleList := promv1.PrometheusRuleList{}
-	if err := r.list(&promRuleList); err != nil {
-		return fmt.Errorf("Could not list prometheus rules: %v", err)
-	}
-	for i := range promRuleList.Items {
-		obj := promRuleList.Items[i]
-		utils.AddLabel(obj, monLabelKey, monLabelValue)
-		if err := r.update(obj); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-// reconcileRookCephOperatorConfig is used to set resource request and limits on csi containers
-func (r *ManagedOCSReconciler) reconcileRookCephOperatorConfig() error {
-	rookConfigMap := &corev1.ConfigMap{}
-	rookConfigMap.Name = rookConfigMapName
-	rookConfigMap.Namespace = r.namespace
-
-	if err := r.get(rookConfigMap); err != nil {
-		// Because resource limits will not be set, failure to get the Rook ConfigMap results in failure to reconcile.
-		return fmt.Errorf("Failed to get Rook ConfigMap: %v", err)
-	}
-
-	cloneRookConfigMap := rookConfigMap.DeepCopy()
-	if cloneRookConfigMap.Data == nil {
-		cloneRookConfigMap.Data = map[string]string{}
-	}
-
-	if r.DeploymentType == providerDeploymentType {
-		cloneRookConfigMap.Data["ROOK_CSI_ENABLE_CEPHFS"] = "false"
-		cloneRookConfigMap.Data["ROOK_CSI_ENABLE_RBD"] = "false"
-	} else {
-		cloneRookConfigMap.Data["CSI_RBD_PROVISIONER_RESOURCE"] = utils.MarshalRookResourceRequirements(utils.RookResourceRequirementsList{
-			utils.RookResourceRequirements{
-				Name:     "csi-provisioner",
-				Resource: utils.GetResourceRequirements("csi-provisioner"),
-			},
-			utils.RookResourceRequirements{
-				Name:     "csi-resizer",
-				Resource: utils.GetResourceRequirements("csi-resizer"),
-			},
-			utils.RookResourceRequirements{
-				Name:     "csi-attacher",
-				Resource: utils.GetResourceRequirements("csi-attacher"),
-			},
-			utils.RookResourceRequirements{
-				Name:     "csi-snapshotter",
-				Resource: utils.GetResourceRequirements("csi-snapshotter"),
-			},
-			utils.RookResourceRequirements{
-				Name:     "csi-rbdplugin",
-				Resource: utils.GetResourceRequirements("csi-rbdplugin"),
-			},
-			utils.RookResourceRequirements{
-				Name:     "liveness-prometheus",
-				Resource: utils.GetResourceRequirements("liveness-prometheus"),
-			},
-		})
-
-		cloneRookConfigMap.Data["CSI_RBD_PLUGIN_RESOURCE"] = utils.MarshalRookResourceRequirements(utils.RookResourceRequirementsList{
-			{
-				Name:     "driver-registrar",
-				Resource: utils.GetResourceRequirements("driver-registrar"),
-			},
-			{
-				Name:     "csi-rbdplugin",
-				Resource: utils.GetResourceRequirements("csi-rbdplugin"),
-			},
-			{
-				Name:     "liveness-prometheus",
-				Resource: utils.GetResourceRequirements("liveness-prometheus"),
-			},
-		})
-
-		cloneRookConfigMap.Data["CSI_CEPHFS_PROVISIONER_RESOURCE"] = utils.MarshalRookResourceRequirements(utils.RookResourceRequirementsList{
-			{
-				Name:     "csi-provisioner",
-				Resource: utils.GetResourceRequirements("csi-provisioner"),
-			},
-			{
-				Name:     "csi-resizer",
-				Resource: utils.GetResourceRequirements("csi-resizer"),
-			},
-			{
-				Name:     "csi-attacher",
-				Resource: utils.GetResourceRequirements("csi-attacher"),
-			},
-			{
-				Name:     "csi-snapshotter",
-				Resource: utils.GetResourceRequirements("csi-snapshotter"),
-			},
-			{
-				Name:     "csi-cephfsplugin",
-				Resource: utils.GetResourceRequirements("csi-cephfsplugin"),
-			},
-			{
-				Name:     "liveness-prometheus",
-				Resource: utils.GetResourceRequirements("liveness-prometheus"),
-			},
-		})
-
-		cloneRookConfigMap.Data["CSI_CEPHFS_PLUGIN_RESOURCE"] = utils.MarshalRookResourceRequirements(utils.RookResourceRequirementsList{
-			{
-				Name:     "driver-registrar",
-				Resource: utils.GetResourceRequirements("driver-registrar"),
-			},
-			{
-				Name:     "csi-cephfsplugin",
-				Resource: utils.GetResourceRequirements("csi-cephfsplugin"),
-			},
-			{
-				Name:     "liveness-prometheus",
-				Resource: utils.GetResourceRequirements("liveness-prometheus"),
-			},
-		})
-	}
-
-	if !equality.Semantic.DeepEqual(rookConfigMap, cloneRookConfigMap) {
-		if err := r.update(cloneRookConfigMap); err != nil {
-			return fmt.Errorf("Failed to update Rook ConfigMap: %v", err)
-		}
-	}
-
-	return nil
-}
-
-func (r *ManagedOCSReconciler) reconcileEgressNetworkPolicy() error {
-	if !r.AvailableCRDs[EgressNetworkPolicyCRD] {
-		r.Log.Info("EgressNetworkPolicy CRD not present, skipping reconcile for egress network policy")
-		return nil
-	}
-	_, err := ctrl.CreateOrUpdate(r.ctx, r.Client, r.egressNetworkPolicy, func() error {
-		if err := r.own(r.egressNetworkPolicy); err != nil {
-			return err
-		}
-		desired := templates.EgressNetworkPolicyTemplate.DeepCopy()
-
-		if r.DeploymentType != convergedDeploymentType {
-			// Get the aws config map
-			awsConfigMap := &corev1.ConfigMap{}
-			awsConfigMap.Name = utils.IMDSConfigMapName
-			awsConfigMap.Namespace = r.namespace
-			if err := r.get(awsConfigMap); err != nil {
-				return fmt.Errorf("Unable to get AWS ConfigMap: %v", err)
-			}
-
-			// Get the machine cidr
-			vpcCIDR, ok := awsConfigMap.Data[utils.CIDRKey]
-			if !ok {
-				return fmt.Errorf("Unable to determine machine CIDR from AWS ConfigMap")
-			}
-			// Allow egress traffic to that cidr range
-			var vpcEgressRules []openshiftv1.EgressNetworkPolicyRule
-			cidrList := strings.Split(vpcCIDR, ";")
-			for _, cidr := range cidrList {
-				if cidr == "" {
-					continue
-				}
-				vpcEgressRules = append(vpcEgressRules, openshiftv1.EgressNetworkPolicyRule{
-					Type: openshiftv1.EgressNetworkPolicyRuleAllow,
-					To: openshiftv1.EgressNetworkPolicyPeer{
-						CIDRSelector: cidr,
-					},
-				})
-			}
-
-			// Inserting the VPC Egress rule in front of all other egress rules.
-			// The order or rules matter
-			// https://docs.openshift.com/container-platform/4.10/networking/openshift_sdn/configuring-egress-firewall.html#policy-rule-order_openshift-sdn-egress-firewall
-			// Inserting this rule in the front ensures it comes before the EgressNetworkPolicyRuleDeny rule.
-			desired.Spec.Egress = append(
-				vpcEgressRules,
-				desired.Spec.Egress...,
-			)
-		}
-
-		if r.deadMansSnitchSecret.UID == "" {
-			if err := r.get(r.deadMansSnitchSecret); err != nil {
-				return fmt.Errorf("Unable to get DMS secret: %v", err)
-			}
-		}
-		snitchStr := string(r.deadMansSnitchSecret.Data["SNITCH_URL"])
-		if snitchStr == "" {
-			return fmt.Errorf("DMS secret does not contain a SNITCH_URL entry")
-		}
-		snitchURL, err := url.Parse(snitchStr)
-		if err != nil {
-			return fmt.Errorf("Unable to parse DMS url: %v", err)
-		}
-		if snitchURL.Hostname() == "" {
-			return fmt.Errorf("DMS snitch url %q does not have a valid hostname", snitchURL)
-		}
-
-		if r.smtpSecret.UID == "" {
-			if err := r.get(r.smtpSecret); err != nil {
-				return fmt.Errorf("Unable to get SMTP secret: %v", err)
-			}
-		}
-		smtpHost := string(r.smtpSecret.Data["host"])
-		if smtpHost == "" {
-			return fmt.Errorf("smtp secret does not contain a host entry")
-		}
-
-		rhobsURL, err := url.Parse(r.RHOBSEndpoint)
-		if err != nil {
-			return fmt.Errorf("Unable to parse RHOBS url: %v", err)
-		}
-		if rhobsURL.Hostname() == "" {
-			return fmt.Errorf("RHOBS url %q does not have a valid hostname", rhobsURL)
-		}
-
-		ssoURL, err := url.Parse(r.RHSSOTokenEndpoint)
-		if err != nil {
-			return fmt.Errorf("Unable to parse RHSSOTokenEndpoint url: %v", err)
-		}
-		if ssoURL.Hostname() == "" {
-			return fmt.Errorf("RHSSOTokenEndpoint url %q does not have a valid hostname", ssoURL)
-		}
-
-		dmsEgressRule := openshiftv1.EgressNetworkPolicyRule{}
-		dmsEgressRule.To.DNSName = snitchURL.Hostname()
-		dmsEgressRule.Type = openshiftv1.EgressNetworkPolicyRuleAllow
-
-		smtpEgressRule := openshiftv1.EgressNetworkPolicyRule{}
-		smtpEgressRule.To.DNSName = smtpHost
-		smtpEgressRule.Type = openshiftv1.EgressNetworkPolicyRuleAllow
-
-		rhobsEgressRule := openshiftv1.EgressNetworkPolicyRule{}
-		rhobsEgressRule.To.DNSName = rhobsURL.Hostname()
-		rhobsEgressRule.Type = openshiftv1.EgressNetworkPolicyRuleAllow
-
-		ssoEgressRule := openshiftv1.EgressNetworkPolicyRule{}
-		ssoEgressRule.To.DNSName = ssoURL.Hostname()
-		ssoEgressRule.Type = openshiftv1.EgressNetworkPolicyRuleAllow
-
-		desired.Spec.Egress = append(
-			[]openshiftv1.EgressNetworkPolicyRule{
-				dmsEgressRule,
-				smtpEgressRule,
-				rhobsEgressRule,
-				ssoEgressRule,
-			},
-			desired.Spec.Egress...,
-		)
-		r.egressNetworkPolicy.Spec = desired.Spec
-		return nil
-	})
-	if err != nil {
-		return fmt.Errorf("Failed to update egressNetworkPolicy: %v", err)
-	}
-	return nil
-}
-
-func (r *ManagedOCSReconciler) reconcileEgressFirewall() error {
-	if !r.AvailableCRDs[EgressFirewallCRD] {
-		r.Log.Info("EgressFirewall CRD not present, skipping reconcile for egress firewall")
-		return nil
-	}
-
-	_, err := ctrl.CreateOrUpdate(r.ctx, r.Client, r.egressFirewall, func() error {
-		if err := r.own(r.egressFirewall); err != nil {
-			return err
-		}
-		desired := templates.EgressFirewallTemplate.DeepCopy()
-
-		if r.DeploymentType != convergedDeploymentType {
-			// Get the aws config map
-			awsConfigMap := &corev1.ConfigMap{}
-			awsConfigMap.Name = utils.IMDSConfigMapName
-			awsConfigMap.Namespace = r.namespace
-			if err := r.get(awsConfigMap); err != nil {
-				return fmt.Errorf("Unable to get AWS ConfigMap: %v", err)
-			}
-
-			// Get the machine cidr
-			vpcCIDR, ok := awsConfigMap.Data[utils.CIDRKey]
-			if !ok {
-				return fmt.Errorf("Unable to determine machine CIDR from AWS ConfigMap")
-			}
-			// Allow egress traffic to that cidr range
-			var vpcEgressRules []ovnv1.EgressFirewallRule
-			cidrList := strings.Split(vpcCIDR, ";")
-			for _, cidr := range cidrList {
-				if cidr == "" {
-					continue
-				}
-				vpcEgressRules = append(vpcEgressRules, ovnv1.EgressFirewallRule{
-					Type: ovnv1.EgressFirewallRuleAllow,
-					To: ovnv1.EgressFirewallDestination{
-						CIDRSelector: cidr,
-					},
-				})
-			}
-
-			// Inserting the VPC Egress rule in front of all other egress rules.
-			// The order or rules matter
-			// https://docs.openshift.com/container-platform/4.10/networking/openshift_sdn/configuring-egress-firewall.html#policy-rule-order_openshift-sdn-egress-firewall
-			// Inserting this rule in the front ensures it comes before the EgressNetworkPolicyRuleDeny rule.
-			desired.Spec.Egress = append(
-				vpcEgressRules,
-				desired.Spec.Egress...,
-			)
-		}
-
-		if r.deadMansSnitchSecret.UID == "" {
-			if err := r.get(r.deadMansSnitchSecret); err != nil {
-				return fmt.Errorf("Unable to get DMS secret: %v", err)
-			}
-		}
-		snitchStr := string(r.deadMansSnitchSecret.Data["SNITCH_URL"])
-		if snitchStr == "" {
-			return fmt.Errorf("DMS secret does not contain a SNITCH_URL entry")
-		}
-		snitchURL, err := url.Parse(snitchStr)
-		if err != nil {
-			return fmt.Errorf("Unable to parse DMS url: %v", err)
-		}
-		if snitchURL.Hostname() == "" {
-			return fmt.Errorf("DMS snitch url %q does not have a valid hostname", snitchURL)
-		}
-
-		if r.smtpSecret.UID == "" {
-			if err := r.get(r.smtpSecret); err != nil {
-				return fmt.Errorf("Unable to get SMTP secret: %v", err)
-			}
-		}
-		smtpHost := string(r.smtpSecret.Data["host"])
-		if smtpHost == "" {
-			return fmt.Errorf("smtp secret does not contain a host entry")
-		}
-
-		rhobsURL, err := url.Parse(r.RHOBSEndpoint)
-		if err != nil {
-			return fmt.Errorf("Unable to parse RHOBS url: %v", err)
-		}
-		if rhobsURL.Hostname() == "" {
-			return fmt.Errorf("RHOBS url %q does not have a valid hostname", rhobsURL)
-		}
-
-		ssoURL, err := url.Parse(r.RHSSOTokenEndpoint)
-		if err != nil {
-			return fmt.Errorf("Unable to parse RHSSOTokenEndpoint url: %v", err)
-		}
-		if ssoURL.Hostname() == "" {
-			return fmt.Errorf("RHSSOTokenEndpoint url %q does not have a valid hostname", ssoURL)
-		}
-
-		dmsEgressRule := ovnv1.EgressFirewallRule{}
-		dmsEgressRule.To.DNSName = snitchURL.Hostname()
-		dmsEgressRule.Type = ovnv1.EgressFirewallRuleAllow
-
-		smtpEgressRule := ovnv1.EgressFirewallRule{}
-		smtpEgressRule.To.DNSName = smtpHost
-		smtpEgressRule.Type = ovnv1.EgressFirewallRuleAllow
-
-		rhobsEgressRule := ovnv1.EgressFirewallRule{}
-		rhobsEgressRule.To.DNSName = rhobsURL.Hostname()
-		rhobsEgressRule.Type = ovnv1.EgressFirewallRuleAllow
-
-		ssoEgressRule := ovnv1.EgressFirewallRule{}
-		ssoEgressRule.To.DNSName = ssoURL.Hostname()
-		ssoEgressRule.Type = ovnv1.EgressFirewallRuleAllow
-
-		desired.Spec.Egress = append(
-			[]ovnv1.EgressFirewallRule{
-				dmsEgressRule,
-				smtpEgressRule,
-				rhobsEgressRule,
-				ssoEgressRule,
-			},
-			desired.Spec.Egress...,
-		)
-		r.egressFirewall.Spec = desired.Spec
-		return nil
-	})
-	if err != nil {
-		return fmt.Errorf("Failed to update egressFirewall: %v", err)
-	}
-	return nil
-
-}
-
-func (r *ManagedOCSReconciler) reconcileIngressNetworkPolicy() error {
-	_, err := ctrl.CreateOrUpdate(r.ctx, r.Client, r.ingressNetworkPolicy, func() error {
-		if err := r.own(r.ingressNetworkPolicy); err != nil {
-			return err
-		}
-		desired := templates.NetworkPolicyTemplate.DeepCopy()
-		r.ingressNetworkPolicy.Spec = desired.Spec
-		return nil
-	})
-	if err != nil {
-		return fmt.Errorf("Failed to update ingress NetworkPolicy: %v", err)
-	}
-	return nil
-}
-
-func (r *ManagedOCSReconciler) reconcileCephIngressNetworkPolicy() error {
-	_, err := ctrl.CreateOrUpdate(r.ctx, r.Client, r.cephIngressNetworkPolicy, func() error {
-		if err := r.own(r.cephIngressNetworkPolicy); err != nil {
-			return err
-		}
-		desired := templates.CephNetworkPolicyTemplate.DeepCopy()
-		r.cephIngressNetworkPolicy.Spec = desired.Spec
-		return nil
-	})
-	if err != nil {
-		return fmt.Errorf("Failed to update ceph ingress NetworkPolicy: %v", err)
-	}
-	return nil
-}
-
-func (r *ManagedOCSReconciler) reconcileProviderAPIServerNetworkPolicy() error {
-	if r.DeploymentType != providerDeploymentType {
-		r.Log.Info("Non provider deployment, skipping reconcile for api server ingress policy")
-		return nil
-	}
-	_, err := ctrl.CreateOrUpdate(r.ctx, r.Client, r.providerAPIServerNetworkPolicy, func() error {
-		if err := r.own(r.providerAPIServerNetworkPolicy); err != nil {
-			return err
-		}
-		desired := templates.ProviderApiServerNetworkPolicyTemplate.DeepCopy()
-		r.providerAPIServerNetworkPolicy.Spec = desired.Spec
-		return nil
-	})
-	if err != nil {
-		return fmt.Errorf("Failed to update provider api server NetworkPolicy: %v", err)
-	}
-	return nil
-}
-
-func (r *ManagedOCSReconciler) reconcilePrometheusProxyNetworkPolicy() error {
-	r.Log.Info("reconciling PrometheusProxyNetworkPolicy resources")
-
-	_, err := ctrl.CreateOrUpdate(r.ctx, r.Client, r.prometheusProxyNetworkPolicy, func() error {
-		if err := r.own(r.prometheusProxyNetworkPolicy); err != nil {
-			return err
-		}
-		desired := templates.PrometheusProxyNetworkPolicyTemplate.DeepCopy()
-		r.prometheusProxyNetworkPolicy.Spec = desired.Spec
-		return nil
-	})
-	if err != nil {
-		return fmt.Errorf("Failed to update prometheus proxy NetworkPolicy: %v", err)
-	}
-	return nil
-}
-
-func (r *ManagedOCSReconciler) checkUninstallCondition() bool {
-	configmap := &corev1.ConfigMap{}
-	configmap.Name = r.AddonConfigMapName
-	configmap.Namespace = r.namespace
-
-	err := r.get(configmap)
-	if err != nil {
-		if !errors.IsNotFound(err) {
-			r.Log.Error(err, "Unable to get addon delete configmap")
-		}
-		return false
-	}
-	_, ok := configmap.Labels[r.AddonConfigMapDeleteLabelKey]
-	return ok
-}
-
 func (r *ManagedOCSReconciler) areComponentsReadyForUninstall() bool {
-	subComponents := r.managedOCS.Status.Components
-	return subComponents.StorageCluster.State == v1.ComponentReady &&
-		subComponents.Prometheus.State == v1.ComponentReady &&
+	subComponents := r.managedFusionDeployment.Status.Components
+	return subComponents.Prometheus.State == v1.ComponentReady &&
 		subComponents.Alertmanager.State == v1.ComponentReady
-}
-
-func (r *ManagedOCSReconciler) hasOCSVolumes() (bool, error) {
-	// get all the storage class
-	storageClassList := storagev1.StorageClassList{}
-	if err := r.UnrestrictedClient.List(r.ctx, &storageClassList); err != nil {
-		return false, fmt.Errorf("unable to list storage classes: %v", err)
-	}
-
-	// create a set of storage class names who are using the OCS provisioner
-	// provisioner name prefixed with the namespace name
-	ocsStorageClass := make(map[string]bool)
-	for i := range storageClassList.Items {
-		storageClass := &storageClassList.Items[i]
-		if strings.HasPrefix(storageClassList.Items[i].Provisioner, r.namespace) {
-			ocsStorageClass[storageClass.Name] = true
-		}
-	}
-
-	// get all the PVs
-	pvList := &corev1.PersistentVolumeList{}
-	if err := r.UnrestrictedClient.List(r.ctx, pvList); err != nil {
-		return false, fmt.Errorf("unable to list persistent volumes: %v", err)
-	}
-
-	// check if there are any PVs using OCS storage classes
-	for i := range pvList.Items {
-		scName := pvList.Items[i].Spec.StorageClassName
-		if ocsStorageClass[scName] {
-			return true, nil
-		}
-	}
-	return false, nil
-}
-
-func (r *ManagedOCSReconciler) hasOCSStorageConsumers() (bool, error) {
-	storageConsumerList := ocsv1alpha1.StorageConsumerList{}
-	if err := r.Client.List(r.ctx, &storageConsumerList, &client.ListOptions{Limit: int64(1)}); err != nil {
-		return false, fmt.Errorf("unable to list storage consumers: %v", err)
-	}
-	return len(storageConsumerList.Items) > 0, nil
-}
-
-func (r *ManagedOCSReconciler) reconcileCSV() error {
-	r.Log.Info("Reconciling CSVs")
-
-	csvList := opv1a1.ClusterServiceVersionList{}
-	if err := r.list(&csvList); err != nil {
-		return fmt.Errorf("unable to list csv resources: %v", err)
-	}
-
-	for index := range csvList.Items {
-		csv := &csvList.Items[index]
-		if strings.HasPrefix(csv.Name, ocsOperatorName) {
-			if err := r.updateOCSCSV(csv); err != nil {
-				return fmt.Errorf("Failed to update OCS CSV: %v", err)
-			}
-		} else if strings.HasPrefix(csv.Name, mcgOperatorName) {
-			if err := r.updateMCGCSV(csv); err != nil {
-				return fmt.Errorf("Failed to update MCG CSV: %v", err)
-			}
-		}
-	}
-	return nil
-}
-
-func (r *ManagedOCSReconciler) updateOCSCSV(csv *opv1a1.ClusterServiceVersion) error {
-	isChanged := false
-	deployments := csv.Spec.InstallStrategy.StrategySpec.DeploymentSpecs
-	for i := range deployments {
-		containers := deployments[i].Spec.Template.Spec.Containers
-		for j := range containers {
-			switch container := &containers[j]; container.Name {
-			case "ocs-operator":
-				resources := utils.GetResourceRequirements("ocs-operator")
-				if !equality.Semantic.DeepEqual(container.Resources, resources) {
-					container.Resources = resources
-					isChanged = true
-				}
-			case "rook-ceph-operator":
-				resources := utils.GetResourceRequirements("rook-ceph-operator")
-				if !equality.Semantic.DeepEqual(container.Resources, resources) {
-					container.Resources = resources
-					isChanged = true
-				}
-			case "ocs-metrics-exporter":
-				resources := utils.GetResourceRequirements("ocs-metrics-exporter")
-				if !equality.Semantic.DeepEqual(container.Resources, resources) {
-					container.Resources = resources
-					isChanged = true
-				}
-			default:
-				r.Log.V(-1).Info("Could not find resource requirement", "Resource", container.Name)
-			}
-		}
-	}
-	if isChanged {
-		if err := r.update(csv); err != nil {
-			return fmt.Errorf("Failed to update OCS CSV: %v", err)
-		}
-	}
-	return nil
-}
-
-func (r *ManagedOCSReconciler) updateMCGCSV(csv *opv1a1.ClusterServiceVersion) error {
-	isChanged := false
-	mcgDeployments := csv.Spec.InstallStrategy.StrategySpec.DeploymentSpecs
-	for i := range mcgDeployments {
-		deployment := &mcgDeployments[i]
-		// Disable noobaa operator by scaling down the replica of noobaa deploymnet
-		// in MCG Operator CSV.
-		if deployment.Name == "noobaa-operator" &&
-			(deployment.Spec.Replicas == nil || *deployment.Spec.Replicas > 0) {
-			zero := int32(0)
-			deployment.Spec.Replicas = &zero
-			isChanged = true
-		}
-	}
-	if isChanged {
-		if err := r.update(csv); err != nil {
-			return fmt.Errorf("Failed to update MCG CSV: %v", err)
-		}
-	}
-	return nil
 }
 
 func (r *ManagedOCSReconciler) removeOLMComponents() error {
 
-	r.Log.Info("deleting deployer csv")
+	r.Log.Info("deleting agent csv")
 	if err := r.deleteCSVByPrefix(deployerCSVPrefix); err != nil {
 		return fmt.Errorf("Unable to delete csv: %v", err)
 	} else {
-		r.Log.Info("Deployer csv removed successfully")
+		r.Log.Info("Agent csv removed successfully")
 		return nil
 	}
 }
@@ -1929,7 +645,7 @@ func (r *ManagedOCSReconciler) delete(obj client.Object) error {
 
 func (r *ManagedOCSReconciler) own(resource metav1.Object) error {
 	// Ensure managedOCS ownership on a resource
-	if err := ctrl.SetControllerReference(r.managedOCS, resource, r.Scheme); err != nil {
+	if err := ctrl.SetControllerReference(r.managedFusionDeployment, resource, r.Scheme); err != nil {
 		return err
 	}
 	return nil
@@ -1958,37 +674,6 @@ func (r *ManagedOCSReconciler) getCSVByPrefix(name string) (*opv1a1.ClusterServi
 		}
 	}
 	return nil, errors.NewNotFound(opv1a1.Resource("csv"), fmt.Sprintf("unable to find a csv prefixed with %s", name))
-}
-
-func findStorageDeviceSet(storageDeviceSets []ocsv1.StorageDeviceSet, deviceSetName string) *ocsv1.StorageDeviceSet {
-	for index := range storageDeviceSets {
-		item := &storageDeviceSets[index]
-		if item.Name == deviceSetName {
-			return item
-		}
-	}
-	return nil
-}
-
-func (r *ManagedOCSReconciler) ensureMCGDeployment(storageCluster *ocsv1.StorageCluster, mcgEnable bool) error {
-	// Check and enable MCG in Storage Cluster spec
-	if mcgEnable {
-		r.Log.Info("Enabling Multi Cloud Gateway")
-		storageCluster.Spec.MultiCloudGateway.ReconcileStrategy = "manage"
-	} else if storageCluster.Spec.MultiCloudGateway.ReconcileStrategy == "manage" {
-		r.Log.V(-1).Info("Trying to disable Multi Cloud Gateway, Invalid operation")
-	}
-	return nil
-}
-
-func (r *ManagedOCSReconciler) setDeviceSetCount(deviceSet *ocsv1.StorageDeviceSet, desiredDeviceSetCount int, currDeviceSetCount int) {
-	r.Log.Info("Setting storage device set count", "Current", currDeviceSetCount, "New", desiredDeviceSetCount)
-	if currDeviceSetCount <= desiredDeviceSetCount {
-		deviceSet.Count = desiredDeviceSetCount
-	} else {
-		r.Log.V(-1).Info("Requested storage device set count will result in downscaling, which is not supported. Skipping")
-		deviceSet.Count = currDeviceSetCount
-	}
 }
 
 func findInSlice(slice []string, s string) bool {

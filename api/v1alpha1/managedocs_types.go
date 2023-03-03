@@ -53,9 +53,8 @@ type ComponentStatus struct {
 }
 
 type ComponentStatusMap struct {
-	StorageCluster ComponentStatus `json:"storageCluster"`
-	Prometheus     ComponentStatus `json:"prometheus"`
-	Alertmanager   ComponentStatus `json:"alertmanager"`
+	Prometheus   ComponentStatus `json:"prometheus"`
+	Alertmanager ComponentStatus `json:"alertmanager"`
 }
 
 // ManagedFusionDeploymentStatus defines the observed state of ManagedFusionDeployment
