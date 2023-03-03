@@ -64,7 +64,7 @@ var _ = Describe("ManagedFusionDeployment controller", func() {
 		},
 	}
 
-	setupAlertmanagerConfigConditions := func(
+	setupManagedFusionSecretConditions := func(
 		hasPagerConfig bool,
 		hasSMTPConfig bool,
 		hasPagerKey bool,
@@ -120,6 +120,12 @@ var _ = Describe("ManagedFusionDeployment controller", func() {
 			Expect(k8sClient.Create(ctx, managedFusionAgentSecret)).Should(Succeed())
 		}
 	}
+	// Valid secret structure - correct smtp and pager duty keys and data
+	// Invalid secret structure - incorrect smtp and pager duty keys and data
+	// Complete smtp data
+	// Incomplete smtp data
+	// Complete pager data
+	// Incomplete pager data
 
 	Context("reconcile()", Ordered, func() {
 		When("there is no managedFusionAgent Secret in the cluster", func() {
@@ -138,11 +144,24 @@ var _ = Describe("ManagedFusionDeployment controller", func() {
 				utils.EnsureNoResources(k8sClient, ctx, resList, timeout, interval)
 			})
 		})
-		When("there is a valid managedFusionAgent Secret in the cluster", func() {
-			It("should create reconciled resources", func() {
-				// Create a valid add-on parameters secret
+		When("there is a invalid managedFusionAgent Secret in the cluster", func() {
+			It("should not create reconciled resources", func() {
+				// Create a secret with no keys
 				agentSecret := managedFusionAgentSecretTemplate.DeepCopy()
 				Expect(k8sClient.Create(ctx, agentSecret)).Should(Succeed())
+
+				// Ensure, over a period of time, that the resources are not created
+				resList := []client.Object{
+					promTemplate.DeepCopy(),
+					amTemplate.DeepCopy(),
+				}
+				utils.EnsureNoResources(k8sClient, ctx, resList, timeout, interval)
+			})
+		})
+		When("there is a valid managedFusionAgent Secret in the cluster", func() {
+			It("should create reconciled resources", func() {
+				// Create a valid add-on parameters secret but with empty values
+				setupManagedFusionSecretConditions(false, false, false, false)
 
 				By("Creating a prometheus resource")
 				utils.WaitForResource(k8sClient, ctx, promTemplate.DeepCopy(), timeout, interval)
@@ -211,7 +230,7 @@ var _ = Describe("ManagedFusionDeployment controller", func() {
 		})
 		When("there is no value for pagerKey in the managedFusion secret", func() {
 			It("should not create alertmanager config", func() {
-				setupAlertmanagerConfigConditions(true, true, false, true)
+				setupManagedFusionSecretConditions(true, true, false, true)
 
 				// Ensure, over a period of time, that the resources are not created
 				utils.EnsureNoResource(k8sClient, ctx, amConfigSecretTemplate.DeepCopy(), timeout, interval)
@@ -219,7 +238,7 @@ var _ = Describe("ManagedFusionDeployment controller", func() {
 		})
 		When("there is no SMTP password in managedFusion secret", func() {
 			It("should not create alertmanager config", func() {
-				setupAlertmanagerConfigConditions(true, true, true, false)
+				setupManagedFusionSecretConditions(true, true, true, false)
 
 				// Ensure, over a period of time, that the resources are not created
 				utils.EnsureNoResource(k8sClient, ctx, amConfigSecretTemplate.DeepCopy(), timeout, interval)
@@ -227,7 +246,7 @@ var _ = Describe("ManagedFusionDeployment controller", func() {
 		})
 		When("there is no pagerduty config in the managedFusion secret", func() {
 			It("should not create alertmanager config", func() {
-				setupAlertmanagerConfigConditions(false, true, true, true)
+				setupManagedFusionSecretConditions(false, true, true, true)
 
 				// Ensure, over a period of time, that the resources are not created
 				utils.EnsureNoResource(k8sClient, ctx, amConfigTemplate.DeepCopy(), timeout, interval)
@@ -235,7 +254,7 @@ var _ = Describe("ManagedFusionDeployment controller", func() {
 		})
 		When("there is no smtp config in the managedFusion secret", func() {
 			It("should not create alertmanager config", func() {
-				setupAlertmanagerConfigConditions(true, false, true, true)
+				setupManagedFusionSecretConditions(true, false, true, true)
 
 				// Ensure, over a period of time, that the resources are not created
 				utils.EnsureNoResource(k8sClient, ctx, amConfigTemplate.DeepCopy(), timeout, interval)
@@ -244,7 +263,7 @@ var _ = Describe("ManagedFusionDeployment controller", func() {
 		})
 		When("All conditions for creating an alertmanager config are met", func() {
 			It("should create alertmanager config", func() {
-				setupAlertmanagerConfigConditions(true, true, true, true)
+				setupManagedFusionSecretConditions(true, true, true, true)
 
 				utils.WaitForResource(k8sClient, ctx, amConfigSecretTemplate.DeepCopy(), timeout, interval)
 				utils.WaitForResource(k8sClient, ctx, amConfigTemplate.DeepCopy(), timeout, interval)
@@ -266,12 +285,6 @@ var _ = Describe("ManagedFusionDeployment controller", func() {
 				}
 				smtpYAMLData, _ := yaml.Marshal(&smtpData)
 				agentSecret.Data["smtp_config"] = smtpYAMLData
-				pagerDutyData := pagerDutyConfig{
-					SOPEndpoint: "https://red-hat-storage.github.io/ocs-sop/sop/OSD",
-					ServiceKey:  "test-key",
-				}
-				pagerDutyYAMLData, _ := yaml.Marshal(&pagerDutyData)
-				agentSecret.Data["pager_duty_config"] = pagerDutyYAMLData
 				Expect(k8sClient.Update(ctx, agentSecret)).Should(Succeed())
 
 				// Wait for alertmanager to get updated with smtp details
@@ -304,12 +317,6 @@ var _ = Describe("ManagedFusionDeployment controller", func() {
 				}
 				smtpYAMLData, _ := yaml.Marshal(&smtpData)
 				agentSecret.Data["smtp_config"] = smtpYAMLData
-				pagerDutyData := pagerDutyConfig{
-					SOPEndpoint: "https://red-hat-storage.github.io/ocs-sop/sop/OSD",
-					ServiceKey:  "test-key",
-				}
-				pagerDutyYAMLData, _ := yaml.Marshal(&pagerDutyData)
-				agentSecret.Data["pager_duty_config"] = pagerDutyYAMLData
 				Expect(k8sClient.Update(ctx, agentSecret)).Should(Succeed())
 
 				// Wait for alertmanager to get updated with smtp details
@@ -342,12 +349,6 @@ var _ = Describe("ManagedFusionDeployment controller", func() {
 				}
 				smtpYAMLData, _ := yaml.Marshal(&smtpData)
 				agentSecret.Data["smtp_config"] = smtpYAMLData
-				pagerDutyData := pagerDutyConfig{
-					SOPEndpoint: "https://red-hat-storage.github.io/ocs-sop/sop/OSD",
-					ServiceKey:  "test-key",
-				}
-				pagerDutyYAMLData, _ := yaml.Marshal(&pagerDutyData)
-				agentSecret.Data["pager_duty_config"] = pagerDutyYAMLData
 				Expect(k8sClient.Update(ctx, agentSecret)).Should(Succeed())
 
 				// Wait for alertmanager to get updated with smtp details
@@ -380,12 +381,6 @@ var _ = Describe("ManagedFusionDeployment controller", func() {
 				}
 				smtpYAMLData, _ := yaml.Marshal(&smtpData)
 				agentSecret.Data["smtp_config"] = smtpYAMLData
-				pagerDutyData := pagerDutyConfig{
-					SOPEndpoint: "https://red-hat-storage.github.io/ocs-sop/sop/OSD",
-					ServiceKey:  "test-key",
-				}
-				pagerDutyYAMLData, _ := yaml.Marshal(&pagerDutyData)
-				agentSecret.Data["pager_duty_config"] = pagerDutyYAMLData
 				Expect(k8sClient.Update(ctx, agentSecret)).Should(Succeed())
 
 				// Wait for alertmanager to remove the email configs

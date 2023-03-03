@@ -296,6 +296,24 @@ func (r *ManagedFusionDeployment) reconcilePhases() (reconcile.Result, error) {
 				return ctrl.Result{}, fmt.Errorf("failed to update managed-fusion-agent-config secret with finalizer: %v", err)
 			}
 		}
+
+		// Check if the structure of managedFusionSecret is valid or not
+		managedFusionSecretData := r.managedFusionSecret.Data
+		managedFusionDeploymentPagerDutyConfig, exist := managedFusionSecretData["pager_duty_config"]
+		if !exist {
+			return ctrl.Result{}, fmt.Errorf("managed-fusion-agent-config secret does not contain pager_duty_config entry")
+		}
+		if err := yaml.Unmarshal(managedFusionDeploymentPagerDutyConfig, r.pagerDutyConfigData); err != nil {
+			return ctrl.Result{}, err
+		}
+		managedFusionDeploymentSMTPConfig, exist := managedFusionSecretData["smtp_config"]
+		if !exist {
+			return ctrl.Result{}, fmt.Errorf("managed-fusion-agent-config secret does not contain smtp_config entry")
+		}
+		if err := yaml.Unmarshal(managedFusionDeploymentSMTPConfig, r.smtpConfigData); err != nil {
+			return ctrl.Result{}, err
+		}
+
 		if err := r.reconcileAlertRelabelConfigSecret(); err != nil {
 			return ctrl.Result{}, err
 		}
@@ -331,7 +349,7 @@ func (r *ManagedFusionDeployment) reconcilePhases() (reconcile.Result, error) {
 	return ctrl.Result{}, nil
 }
 
-//TODO Add logic to check if the offerings exists
+// TODO Add logic to check if the offerings exists
 func (r *ManagedFusionDeployment) verifyOfferringsDoNotExist() bool {
 	return true
 }
@@ -431,38 +449,20 @@ func (r *ManagedFusionDeployment) reconcileAlertmanager() error {
 
 func (r *ManagedFusionDeployment) reconcileAlertmanagerSecret() error {
 	r.Log.Info("Reconciling AlertmanagerSecret")
-	managedFusionSecretData := r.managedFusionSecret.Data
-	managedFusionDeploymentPagerDutyConfig, exist := managedFusionSecretData["pager_duty_config"]
-	if !exist {
-		return fmt.Errorf("pager_duty_config key not found in managed-fusion-agent-config secret")
-	}
-	if err := yaml.Unmarshal(managedFusionDeploymentPagerDutyConfig, r.pagerDutyConfigData); err != nil {
-		return err
-	}
-	if r.pagerDutyConfigData.ServiceKey == "" {
-		return fmt.Errorf("managed-fusion-agent-config secret contains an empty pagerDutyKey entry")
-	}
-
-	managedFusionDeploymentSMTPConfig, exist := managedFusionSecretData["smtp_config"]
-	if !exist {
-		return fmt.Errorf("smtp_config key not found in managed-fusion-agent-config secret")
-	}
-	if err := yaml.Unmarshal(managedFusionDeploymentSMTPConfig, r.smtpConfigData); err != nil {
-		return err
-	}
-	if r.smtpConfigData.Password == "" {
-		return fmt.Errorf("managed-fusion-agent-config secret contains an empty smtpPassword entry")
-	}
 	_, err := ctrl.CreateOrUpdate(r.ctx, r.Client, r.alertmanagerSecret, func() error {
 		if err := r.own(r.alertmanagerSecret); err != nil {
 			return err
 		}
-
+		if r.pagerDutyConfigData.ServiceKey == "" {
+			return fmt.Errorf("Agent PagerDuty configuration does not contain serviceKey entry")
+		}
+		if r.smtpConfigData.Password == "" {
+			return fmt.Errorf("Agent SMTP configuration does not contain password entry")
+		}
 		r.alertmanagerSecret.Data = map[string][]byte{
 			amSecretPagerDutyServiceKeyKey: []byte(r.pagerDutyConfigData.ServiceKey),
 			amSecretSMTPAuthPasswordKey:    []byte(r.smtpConfigData.Password),
 		}
-
 		return nil
 	})
 
@@ -476,32 +476,22 @@ func (r *ManagedFusionDeployment) reconcileAlertmanagerConfig() error {
 		if err := r.own(r.alertmanagerConfig); err != nil {
 			return err
 		}
-		if err := r.get(r.alertmanagerSecret); err != nil {
-			return fmt.Errorf("Unable to get alertmanager secret: %v", err)
-		}
-		if r.smtpConfigData == nil {
-			return fmt.Errorf("smtp config doesnot contain alertmanager secret")
-		}
-		if r.pagerDutyConfigData == nil {
-			return fmt.Errorf("pagerduty config doesnot contain alertmanager secret")
-		}
-		if r.pagerDutyConfigData.SOPEndpoint == "" {
-			return fmt.Errorf("managed-fusion-agent-secret does not contain a SOPEndpoint entry")
-		}
 
+		if r.pagerDutyConfigData.SOPEndpoint == "" {
+			return fmt.Errorf("Agent PagerDuty configuration does not contain sopEndpoint entry")
+		}
+		if r.smtpConfigData.Username == "" {
+			return fmt.Errorf("Agent SMTP configuration does not contain username entry")
+		}
+		if r.smtpConfigData.Endpoint == "" {
+			return fmt.Errorf("Agent SMTP configuration does not contain endpoint entry")
+		}
+		if r.smtpConfigData.FromAddress == "" {
+			return fmt.Errorf("Agent SMTP configuration does not contain fromAddress entry")
+		}
 		alertingAddressList := []string{}
 		alertingAddressList = append(alertingAddressList,
 			r.smtpConfigData.NotificationEmails...)
-
-		if r.smtpConfigData.Username == "" {
-			return fmt.Errorf("Agent SMTP configuration does not contain username information")
-		}
-		if r.smtpConfigData.Endpoint == "" {
-			return fmt.Errorf("Agent SMTP configuration does not contain endpoint information")
-		}
-		if r.smtpConfigData.FromAddress == "" {
-			return fmt.Errorf("Agent SMTP configuration does not contain fromAddress information")
-		}
 		smtpHTML, err := ioutil.ReadFile(r.CustomerNotificationHTMLPath)
 		if err != nil {
 			return fmt.Errorf("unable to read customernotification.html file: %v", err)
