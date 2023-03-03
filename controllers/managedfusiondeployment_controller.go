@@ -67,7 +67,7 @@ const (
 	amSecretSMTPAuthPasswordKey      = "smtpAuthPassword"
 )
 
-type ManagedFusionDeployment struct {
+type ManagedFusionReconciler struct {
 	Client                       client.Client
 	UnrestrictedClient           client.Client
 	Log                          logr.Logger
@@ -120,7 +120,7 @@ type pagerDutyConfig struct {
 // +kubebuilder:rbac:groups="config.openshift.io",resources=clusterversions,verbs=get;watch;list
 
 // SetupWithManager creates an setup a ManagedFusionDeployment to work with the provided manager
-func (r *ManagedFusionDeployment) SetupWithManager(mgr ctrl.Manager, ctrlOptions *controller.Options) error {
+func (r *ManagedFusionReconciler) SetupWithManager(mgr ctrl.Manager, ctrlOptions *controller.Options) error {
 	if ctrlOptions == nil {
 		ctrlOptions = &controller.Options{
 			MaxConcurrentReconciles: 1,
@@ -193,7 +193,7 @@ func (r *ManagedFusionDeployment) SetupWithManager(mgr ctrl.Manager, ctrlOptions
 }
 
 // Reconcile changes to all owned resource based on the infromation provided by the ManangedFusionDeployment secret resource
-func (r *ManagedFusionDeployment) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+func (r *ManagedFusionReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := r.Log.WithValues("req.Namespace", req.Namespace, "req.Name", req.Name)
 	log.Info("Starting reconcile for ManangedFusionDeployment")
 
@@ -222,7 +222,7 @@ func (r *ManagedFusionDeployment) Reconcile(ctx context.Context, req ctrl.Reques
 
 }
 
-func (r *ManagedFusionDeployment) initReconciler(ctx context.Context, req ctrl.Request) {
+func (r *ManagedFusionReconciler) initReconciler(ctx context.Context, req ctrl.Request) {
 	r.ctx = ctx
 
 	r.prometheus = &promv1.Prometheus{}
@@ -269,7 +269,7 @@ func (r *ManagedFusionDeployment) initReconciler(ctx context.Context, req ctrl.R
 	r.pagerDutyConfigData = &pagerDutyConfig{}
 }
 
-func (r *ManagedFusionDeployment) reconcilePhases() (reconcile.Result, error) {
+func (r *ManagedFusionReconciler) reconcilePhases() (reconcile.Result, error) {
 	// Uninstallation depends on the status of the offerings.
 	// We are checking the  offerings status
 	// to mitigate scenarios where changes to the component status occurs while the uninstallation logic is running.
@@ -350,11 +350,11 @@ func (r *ManagedFusionDeployment) reconcilePhases() (reconcile.Result, error) {
 }
 
 // TODO Add logic to check if the offerings exists
-func (r *ManagedFusionDeployment) verifyOfferringsDoNotExist() bool {
+func (r *ManagedFusionReconciler) verifyOfferringsDoNotExist() bool {
 	return true
 }
 
-func (r *ManagedFusionDeployment) reconcilePrometheus() error {
+func (r *ManagedFusionReconciler) reconcilePrometheus() error {
 	r.Log.Info("Reconciling Prometheus")
 
 	_, err := ctrl.CreateOrUpdate(r.ctx, r.Client, r.prometheus, func() error {
@@ -423,7 +423,7 @@ func (r *ManagedFusionDeployment) reconcilePrometheus() error {
 	return nil
 }
 
-func (r *ManagedFusionDeployment) reconcileAlertmanager() error {
+func (r *ManagedFusionReconciler) reconcileAlertmanager() error {
 	r.Log.Info("Reconciling Alertmanager")
 	_, err := ctrl.CreateOrUpdate(r.ctx, r.Client, r.alertmanager, func() error {
 		if err := r.own(r.alertmanager); err != nil {
@@ -447,7 +447,7 @@ func (r *ManagedFusionDeployment) reconcileAlertmanager() error {
 	return nil
 }
 
-func (r *ManagedFusionDeployment) reconcileAlertmanagerSecret() error {
+func (r *ManagedFusionReconciler) reconcileAlertmanagerSecret() error {
 	r.Log.Info("Reconciling AlertmanagerSecret")
 	_, err := ctrl.CreateOrUpdate(r.ctx, r.Client, r.alertmanagerSecret, func() error {
 		if err := r.own(r.alertmanagerSecret); err != nil {
@@ -469,7 +469,7 @@ func (r *ManagedFusionDeployment) reconcileAlertmanagerSecret() error {
 	return err
 }
 
-func (r *ManagedFusionDeployment) reconcileAlertmanagerConfig() error {
+func (r *ManagedFusionReconciler) reconcileAlertmanagerConfig() error {
 	r.Log.Info("Reconciling AlertmanagerConfig")
 
 	_, err := ctrl.CreateOrUpdate(r.ctx, r.Client, r.alertmanagerConfig, func() error {
@@ -531,7 +531,7 @@ func (r *ManagedFusionDeployment) reconcileAlertmanagerConfig() error {
 
 // AlertRelabelConfigSecret will have configuration for relabeling the alerts that are firing.
 // It will add namespace label to firing alerts before they are sent to the alertmanager
-func (r *ManagedFusionDeployment) reconcileAlertRelabelConfigSecret() error {
+func (r *ManagedFusionReconciler) reconcileAlertRelabelConfigSecret() error {
 	r.Log.Info("Reconciling alertRelabelConfigSecret")
 
 	_, err := ctrl.CreateOrUpdate(r.ctx, r.Client, r.alertRelabelConfigSecret, func() error {
@@ -573,7 +573,7 @@ func (r *ManagedFusionDeployment) reconcileAlertRelabelConfigSecret() error {
 	return nil
 }
 
-func (r *ManagedFusionDeployment) reconcilePrometheusKubeRBACConfigMap() error {
+func (r *ManagedFusionReconciler) reconcilePrometheusKubeRBACConfigMap() error {
 	r.Log.Info("Reconciling kubeRBACConfigMap")
 
 	_, err := ctrl.CreateOrUpdate(r.ctx, r.Client, r.prometheusKubeRBACConfigMap, func() error {
@@ -595,7 +595,7 @@ func (r *ManagedFusionDeployment) reconcilePrometheusKubeRBACConfigMap() error {
 
 // reconcilePrometheusService function wait for prometheus Service
 // to start and sets appropriate annotation for 'service-ca' controller
-func (r *ManagedFusionDeployment) reconcilePrometheusService() error {
+func (r *ManagedFusionReconciler) reconcilePrometheusService() error {
 	r.Log.Info("Reconciling PrometheusService")
 
 	_, err := ctrl.CreateOrUpdate(r.ctx, r.Client, r.prometheusService, func() error {
@@ -632,7 +632,7 @@ func (r *ManagedFusionDeployment) reconcilePrometheusService() error {
 	return err
 }
 
-func (r *ManagedFusionDeployment) reconcileK8SMetricsServiceMonitor() error {
+func (r *ManagedFusionReconciler) reconcileK8SMetricsServiceMonitor() error {
 	r.Log.Info("Reconciling k8sMetricsServiceMonitor")
 
 	_, err := ctrl.CreateOrUpdate(r.ctx, r.Client, r.k8sMetricsServiceMonitor, func() error {
@@ -653,7 +653,7 @@ func (r *ManagedFusionDeployment) reconcileK8SMetricsServiceMonitor() error {
 // found in the target namespace with a label that matches the label selector the defined on the Prometheus resource
 // we are reconciling in reconcilePrometheus. Doing so instructs the Prometheus instance to notice and react to these labeled
 // monitoring resources
-func (r *ManagedFusionDeployment) reconcileMonitoringResources() error {
+func (r *ManagedFusionReconciler) reconcileMonitoringResources() error {
 	r.Log.Info("reconciling monitoring resources")
 
 	podMonitorList := promv1.PodMonitorList{}
@@ -694,7 +694,7 @@ func (r *ManagedFusionDeployment) reconcileMonitoringResources() error {
 
 	return nil
 }
-func (r *ManagedFusionDeployment) reconcilePrometheusProxyNetworkPolicy() error {
+func (r *ManagedFusionReconciler) reconcilePrometheusProxyNetworkPolicy() error {
 	r.Log.Info("reconciling PrometheusProxyNetworkPolicy resources")
 
 	_, err := ctrl.CreateOrUpdate(r.ctx, r.Client, r.prometheusProxyNetworkPolicy, func() error {
@@ -711,7 +711,7 @@ func (r *ManagedFusionDeployment) reconcilePrometheusProxyNetworkPolicy() error 
 	return nil
 }
 
-func (r *ManagedFusionDeployment) initiateAgentUninstallation() error {
+func (r *ManagedFusionReconciler) initiateAgentUninstallation() error {
 	r.Log.Info("deleting agent namespace")
 	if err := r.delete(&corev1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{
@@ -730,28 +730,28 @@ func (r *ManagedFusionDeployment) initiateAgentUninstallation() error {
 	return nil
 }
 
-func (r *ManagedFusionDeployment) get(obj client.Object) error {
+func (r *ManagedFusionReconciler) get(obj client.Object) error {
 	key := client.ObjectKeyFromObject(obj)
 	return r.Client.Get(r.ctx, key, obj)
 }
 
-func (r *ManagedFusionDeployment) list(obj client.ObjectList) error {
+func (r *ManagedFusionReconciler) list(obj client.ObjectList) error {
 	listOptions := client.InNamespace(r.Namespace)
 	return r.Client.List(r.ctx, obj, listOptions)
 }
 
-func (r *ManagedFusionDeployment) update(obj client.Object) error {
+func (r *ManagedFusionReconciler) update(obj client.Object) error {
 	return r.Client.Update(r.ctx, obj)
 }
 
-func (r *ManagedFusionDeployment) delete(obj client.Object) error {
+func (r *ManagedFusionReconciler) delete(obj client.Object) error {
 	if err := r.Client.Delete(r.ctx, obj); err != nil && !errors.IsNotFound(err) {
 		return err
 	}
 	return nil
 }
 
-func (r *ManagedFusionDeployment) own(resource metav1.Object) error {
+func (r *ManagedFusionReconciler) own(resource metav1.Object) error {
 	// Ensure ManangedFusionDeployment secret ownership on a resource
 	if err := ctrl.SetControllerReference(r.managedFusionSecret, resource, r.Scheme); err != nil {
 		return err
@@ -759,7 +759,7 @@ func (r *ManagedFusionDeployment) own(resource metav1.Object) error {
 	return nil
 }
 
-func (r *ManagedFusionDeployment) deleteCSVByPrefix(name string) error {
+func (r *ManagedFusionReconciler) deleteCSVByPrefix(name string) error {
 	if csv, err := r.getCSVByPrefix(name); err == nil {
 		return r.delete(csv)
 	} else if errors.IsNotFound(err) {
@@ -769,7 +769,7 @@ func (r *ManagedFusionDeployment) deleteCSVByPrefix(name string) error {
 	}
 }
 
-func (r *ManagedFusionDeployment) getCSVByPrefix(name string) (*opv1a1.ClusterServiceVersion, error) {
+func (r *ManagedFusionReconciler) getCSVByPrefix(name string) (*opv1a1.ClusterServiceVersion, error) {
 	csvList := opv1a1.ClusterServiceVersionList{}
 	if err := r.list(&csvList); err != nil {
 		return nil, fmt.Errorf("unable to list csv resources: %v", err)

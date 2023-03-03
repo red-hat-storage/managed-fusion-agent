@@ -54,7 +54,7 @@ var (
 	cfg            *rest.Config
 	k8sClient      client.Client
 	testEnv        *envtest.Environment
-	testReconciler *ManagedFusionDeployment
+	testReconciler *ManagedFusionReconciler
 	ctx            context.Context
 	cancel         context.CancelFunc
 )
@@ -134,7 +134,7 @@ var _ = BeforeSuite(func() {
 		})
 		Expect(err).ToNot(HaveOccurred())
 
-		testReconciler = &ManagedFusionDeployment{
+		testReconciler = &ManagedFusionReconciler{
 			Client:                       k8sManager.GetClient(),
 			UnrestrictedClient:           k8sClient,
 			Log:                          ctrl.Log.WithName("controllers").WithName("ManagedFusion"),

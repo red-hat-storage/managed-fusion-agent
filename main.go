@@ -97,7 +97,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err = (&controllers.ManagedFusionDeployment{
+	if err = (&controllers.ManagedFusionReconciler{
 		Client:                       mgr.GetClient(),
 		UnrestrictedClient:           getUnrestrictedClient(),
 		Log:                          ctrl.Log.WithName("controllers").WithName("ManagedFusion"),
