@@ -126,22 +126,15 @@ func (r *ManagedFusionReconciler) SetupWithManager(mgr ctrl.Manager, ctrlOptions
 			MaxConcurrentReconciles: 1,
 		}
 	}
-	// Filter the events for objects that are not owned by managed-fusion-agent-config secret
-	filterNamespaceScopedEvents := predicate.NewPredicateFuncs(
-		func(object client.Object) bool {
-			if object.GetName() == managedFusionSecretName &&
-				object.GetNamespace() == r.Namespace {
-				return true
-			} else {
-				for _, owner := range object.GetOwnerReferences() {
-					if owner.Kind == "Secret" &&
-						owner.Name == managedFusionSecretName {
-						return true
-					}
-				}
-			}
-			return false
-		},
+	managedFusionSecretPredicates := builder.WithPredicates(
+		predicate.NewPredicateFuncs(
+			func(object client.Object) bool {
+				name := object.GetName()
+				namespace := object.GetNamespace()
+				return name == managedFusionSecretName &&
+					namespace == r.Namespace
+			},
+		),
 	)
 	monResourcesPredicates := builder.WithPredicates(
 		predicate.NewPredicateFuncs(
@@ -156,14 +149,14 @@ func (r *ManagedFusionReconciler) SetupWithManager(mgr ctrl.Manager, ctrlOptions
 			return []reconcile.Request{{
 				NamespacedName: types.NamespacedName{
 					Name:      managedFusionSecretName,
-					Namespace: object.GetNamespace(),
+					Namespace: r.Namespace,
 				},
 			}}
 		},
 	)
 	return ctrl.NewControllerManagedBy(mgr).
 		WithOptions(*ctrlOptions).
-		For(&corev1.Secret{}).
+		For(&corev1.Secret{}, managedFusionSecretPredicates).
 		// Watch owned resources
 		Owns(&promv1.Prometheus{}).
 		Owns(&promv1.Alertmanager{}).
@@ -188,7 +181,6 @@ func (r *ManagedFusionReconciler) SetupWithManager(mgr ctrl.Manager, ctrlOptions
 			enqueueManagedFusionAgentRequest,
 			monResourcesPredicates,
 		).
-		WithEventFilter(filterNamespaceScopedEvents).
 		Complete(r)
 }
 
