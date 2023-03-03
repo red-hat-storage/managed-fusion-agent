@@ -22,6 +22,7 @@ import (
 
 	"go.uber.org/zap/zapcore"
 	v1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -60,6 +61,8 @@ func addAllSchemes(scheme *runtime.Scheme) {
 	utilruntime.Must(promv1a1.AddToScheme(scheme))
 
 	utilruntime.Must(v1.AddToScheme(scheme))
+
+	utilruntime.Must(corev1.AddToScheme(scheme))
 
 	utilruntime.Must(operators.AddToScheme(scheme))
 

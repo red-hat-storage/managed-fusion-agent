@@ -190,32 +190,43 @@ func (r *ManagedFusionReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	log.Info("Starting reconcile for ManangedFusionDeployment")
 
 	r.initReconciler(ctx, req)
-
 	if err := r.get(r.managedFusionSecret); err != nil {
 		if errors.IsNotFound(err) {
-			r.Log.V(-1).Info("managed-fusion-agent-config secret resource not found")
+			r.Log.V(-1).Info(fmt.Sprintf("%s secret resource not found", managedFusionSecretName))
 			return ctrl.Result{}, nil
 		}
-		r.Log.Error(err, "Failed to get managed-fusion-agent-config secret")
-		return ctrl.Result{}, fmt.Errorf("failed to get managed-fusion-agent-config secret: %v", err)
+		r.Log.Error(err, fmt.Sprintf("Failed to get %s secret", managedFusionSecretName))
+		return ctrl.Result{}, fmt.Errorf("failed to get %s secret: %v", managedFusionSecretName, err)
+	}
+	// Check if the structure of managedFusionSecret is valid or not
+	if config, found := r.managedFusionSecret.Data["pager_duty_config"]; !found {
+		return ctrl.Result{}, fmt.Errorf("%s secret does not contain pager_duty_config entry", managedFusionSecretName)
+	} else if err := yaml.Unmarshal(config, r.pagerDutyConfigData); err != nil {
+		return ctrl.Result{}, fmt.Errorf("%s.pager_duty_config is not in a valid yaml format: %v", managedFusionSecretName, err)
+	}
+
+	if config, found := r.managedFusionSecret.Data["smtp_config"]; !found {
+		return ctrl.Result{}, fmt.Errorf("%s secret does not contain smtp_config entry", managedFusionSecretName)
+	} else if err := yaml.Unmarshal(config, r.smtpConfigData); err != nil {
+		return ctrl.Result{}, fmt.Errorf("%s.smtp_config is not in a valid yaml format: %v", managedFusionSecretName, err)
 	}
 
 	// Run the reconcile phases
-	var result reconcile.Result
-	var err error
-	if result, err = r.reconcilePhases(); err != nil {
+	if result, err := r.reconcilePhases(); err != nil {
 		r.Log.Error(err, "An error was encountered during reconcilePhases")
-	}
-	if err != nil {
 		return ctrl.Result{}, err
 	} else {
 		return result, nil
 	}
-
 }
 
 func (r *ManagedFusionReconciler) initReconciler(ctx context.Context, req ctrl.Request) {
 	r.ctx = ctx
+
+	// This is an input resource
+	r.managedFusionSecret = &corev1.Secret{}
+	r.managedFusionSecret.Name = managedFusionSecretName
+	r.managedFusionSecret.Namespace = r.Namespace
 
 	r.prometheus = &promv1.Prometheus{}
 	r.prometheus.Name = prometheusName
@@ -253,10 +264,6 @@ func (r *ManagedFusionReconciler) initReconciler(ctx context.Context, req ctrl.R
 	r.alertRelabelConfigSecret.Name = alertRelabelConfigSecretName
 	r.alertRelabelConfigSecret.Namespace = r.Namespace
 
-	r.managedFusionSecret = &corev1.Secret{}
-	r.managedFusionSecret.Name = managedFusionSecretName
-	r.managedFusionSecret.Namespace = r.Namespace
-
 	r.smtpConfigData = &smtpConfig{}
 	r.pagerDutyConfigData = &pagerDutyConfig{}
 }
@@ -264,10 +271,10 @@ func (r *ManagedFusionReconciler) initReconciler(ctx context.Context, req ctrl.R
 func (r *ManagedFusionReconciler) reconcilePhases() (reconcile.Result, error) {
 	if !r.managedFusionSecret.DeletionTimestamp.IsZero() {
 		if r.verifyOfferringsDoNotExist() {
-			r.Log.Info("removing finalizer from managed-fusion-agent-config resource")
+			r.Log.Info(fmt.Sprintf("removing finalizer from %s secret", managedFusionSecretName))
 			r.managedFusionSecret.SetFinalizers(utils.Remove(r.managedFusionSecret.GetFinalizers(), managedFusionFinalizer))
 			if err := r.Client.Update(r.ctx, r.managedFusionSecret); err != nil {
-				return ctrl.Result{}, fmt.Errorf("failed to remove finalizer from managed-fusion-agent-config secret: %v", err)
+				return ctrl.Result{}, fmt.Errorf("failed to remove finalizer from %s secret: %v", managedFusionSecretName, err)
 			}
 			r.Log.Info("finallizer removed successfully")
 
@@ -278,28 +285,11 @@ func (r *ManagedFusionReconciler) reconcilePhases() (reconcile.Result, error) {
 
 	} else if r.managedFusionSecret.UID != "" {
 		if !utils.Contains(r.managedFusionSecret.GetFinalizers(), managedFusionFinalizer) {
-			r.Log.V(-1).Info("finalizer missing on the managed-fusion-agent-config secret resource, adding...")
+			r.Log.V(-1).Info(fmt.Sprintf("finalizer missing on the %s secret resource, adding...", managedFusionSecretName))
 			r.managedFusionSecret.SetFinalizers(append(r.managedFusionSecret.GetFinalizers(), managedFusionFinalizer))
 			if err := r.update(r.managedFusionSecret); err != nil {
-				return ctrl.Result{}, fmt.Errorf("failed to update managed-fusion-agent-config secret with finalizer: %v", err)
+				return ctrl.Result{}, fmt.Errorf("failed to update %s secret with finalizer: %v", managedFusionSecretName, err)
 			}
-		}
-
-		// Check if the structure of managedFusionSecret is valid or not
-		managedFusionSecretData := r.managedFusionSecret.Data
-		managedFusionDeploymentPagerDutyConfig, exist := managedFusionSecretData["pager_duty_config"]
-		if !exist {
-			return ctrl.Result{}, fmt.Errorf("managed-fusion-agent-config secret does not contain pager_duty_config entry")
-		}
-		if err := yaml.Unmarshal(managedFusionDeploymentPagerDutyConfig, r.pagerDutyConfigData); err != nil {
-			return ctrl.Result{}, err
-		}
-		managedFusionDeploymentSMTPConfig, exist := managedFusionSecretData["smtp_config"]
-		if !exist {
-			return ctrl.Result{}, fmt.Errorf("managed-fusion-agent-config secret does not contain smtp_config entry")
-		}
-		if err := yaml.Unmarshal(managedFusionDeploymentSMTPConfig, r.smtpConfigData); err != nil {
-			return ctrl.Result{}, err
 		}
 
 		if err := r.reconcileAlertRelabelConfigSecret(); err != nil {
@@ -700,7 +690,7 @@ func (r *ManagedFusionReconciler) reconcilePrometheusProxyNetworkPolicy() error 
 }
 
 func (r *ManagedFusionReconciler) initiateAgentUninstallation() error {
-	r.Log.Info("deleting agent namespace")
+	r.Log.Info(fmt.Sprintf("deleting %s namespace", r.Namespace))
 	if err := r.delete(&corev1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: r.Namespace,
@@ -708,7 +698,6 @@ func (r *ManagedFusionReconciler) initiateAgentUninstallation() error {
 	}); err != nil {
 		return fmt.Errorf("failed to delete namespace: %v", err)
 	}
-	r.Log.Info("Agent namespace deleted successfully")
 	return nil
 }
 
