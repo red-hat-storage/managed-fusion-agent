@@ -6,7 +6,6 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	opv1a1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
 	promv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	promv1a1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1alpha1"
 	utils "github.com/red-hat-storage/managed-fusion-agent/testutils"
@@ -54,12 +53,6 @@ var _ = Describe("ManagedFusionDeployment controller", func() {
 	amConfigSecretTemplate := corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      alertmanagerSecretName,
-			Namespace: testPrimaryNamespace,
-		},
-	}
-	csvTemplate := opv1a1.ClusterServiceVersion{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      testAgentCSVName,
 			Namespace: testPrimaryNamespace,
 		},
 	}
@@ -405,14 +398,6 @@ var _ = Describe("ManagedFusionDeployment controller", func() {
 				key := utils.GetResourceKey((agentSecret))
 				Eventually(func() bool {
 					err := k8sClient.Get(ctx, key, agentSecret)
-					return err != nil && errors.IsNotFound(err)
-				}, timeout, interval).Should(BeTrue())
-			})
-			It("should delete the agent csv", func() {
-				csv := csvTemplate.DeepCopy()
-				key := utils.GetResourceKey(csv)
-				Eventually(func() bool {
-					err := k8sClient.Get(ctx, key, csv)
 					return err != nil && errors.IsNotFound(err)
 				}, timeout, interval).Should(BeTrue())
 			})

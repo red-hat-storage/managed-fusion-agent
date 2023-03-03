@@ -270,10 +270,6 @@ func (r *ManagedFusionReconciler) initReconciler(ctx context.Context, req ctrl.R
 }
 
 func (r *ManagedFusionReconciler) reconcilePhases() (reconcile.Result, error) {
-	// Uninstallation depends on the status of the offerings.
-	// We are checking the  offerings status
-	// to mitigate scenarios where changes to the component status occurs while the uninstallation logic is running.
-
 	if !r.managedFusionSecret.DeletionTimestamp.IsZero() {
 		if r.verifyOfferringsDoNotExist() {
 			r.Log.Info("removing finalizer from managed-fusion-agent-config resource")
@@ -721,12 +717,6 @@ func (r *ManagedFusionReconciler) initiateAgentUninstallation() error {
 		return fmt.Errorf("failed to delete namespace: %v", err)
 	}
 	r.Log.Info("Agent namespace deleted successfully")
-
-	r.Log.Info("deleting agent csv")
-	if err := r.deleteCSVByPrefix(agentCSVPrefix); err != nil {
-		return fmt.Errorf("Unable to delete csv: %v", err)
-	}
-	r.Log.Info("Agent csv removed successfully")
 	return nil
 }
 
@@ -757,16 +747,6 @@ func (r *ManagedFusionReconciler) own(resource metav1.Object) error {
 		return err
 	}
 	return nil
-}
-
-func (r *ManagedFusionReconciler) deleteCSVByPrefix(name string) error {
-	if csv, err := r.getCSVByPrefix(name); err == nil {
-		return r.delete(csv)
-	} else if errors.IsNotFound(err) {
-		return nil
-	} else {
-		return err
-	}
 }
 
 func (r *ManagedFusionReconciler) getCSVByPrefix(name string) (*opv1a1.ClusterServiceVersion, error) {
