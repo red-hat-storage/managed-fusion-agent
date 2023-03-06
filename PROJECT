@@ -1,4 +1,4 @@
-domain: openshift.io
+domain: ibm.com
 layout: go.kubebuilder.io/v2
 projectName: managed-fusion-agent
 repo: github.com/red-hat-storage/managed-fusion-agent
