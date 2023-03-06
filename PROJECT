@@ -10,6 +10,7 @@ resources:
 - api:
     crdVersion: v1beta1
     namespaced: true
+  controller: true
   domain: ibm.com
   group: misf
   kind: ManagedFusionOffering
