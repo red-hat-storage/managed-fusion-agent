@@ -43,7 +43,7 @@ TARGET_NAMESPACE=${TARGET_NAMESPACE:-openshift-storage}
 # CSV environment variables
 ADDON_NAME=${ADDON_NAME:-ocs-converged}
 ALERT_SMTP_FROM_ADDR=${ALERT_SMTP_FROM_ADDR:-noreply-test@email.com}
-BUNDLE_FILE=${OUTPUT_DIR}/manifests/ocs-osd-deployer.clusterserviceversion.yaml
+BUNDLE_FILE=${OUTPUT_DIR}/manifests/managed-fusion-agent.clusterserviceversion.yaml
 CLUSTER_SIZE=${CLUSTER_SIZE:-1}
 ENABLE_MCG_FLAG=${ENABLE_MCG_FLAG:-false}
 SNITCH_URL=${SNITCH_URL:-https://nosnch.in/fake_url}

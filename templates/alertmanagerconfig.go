@@ -93,15 +93,6 @@ var AlertmanagerConfigTemplate = promv1a1.AlertmanagerConfig{
 					Receiver:       "pagerduty",
 				},
 				),
-				convertToApiExtV1JSON(promv1a1.Route{
-					GroupBy:        []string{"alertname"},
-					GroupWait:      "30s",
-					GroupInterval:  "5m",
-					RepeatInterval: "5m",
-					Matchers:       []promv1a1.Matcher{{Name: "alertname", Value: "DeadMansSnitch", MatchType: promv1a1.MatchEqual}},
-					Receiver:       "DeadMansSnitch",
-				},
-				),
 			},
 		},
 		Receivers: []promv1a1.Receiver{{
@@ -112,9 +103,6 @@ var AlertmanagerConfigTemplate = promv1a1.AlertmanagerConfig{
 				ServiceKey: &corev1.SecretKeySelector{Key: "", LocalObjectReference: corev1.LocalObjectReference{Name: ""}},
 				Details:    []promv1a1.KeyValue{{Key: "", Value: ""}},
 			}},
-		}, {
-			Name:           "DeadMansSnitch",
-			WebhookConfigs: []promv1a1.WebhookConfig{{}},
 		}, {
 			Name: "SendGrid",
 			EmailConfigs: []promv1a1.EmailConfig{{

@@ -18,7 +18,7 @@ package templates
 
 import (
 	promv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
-	"github.com/red-hat-storage/ocs-osd-deployer/utils"
+	"github.com/red-hat-storage/managed-fusion-agent/utils"
 )
 
 // AlertmanagerTemplate is the template that serves as the base for the Alert Manager deployed by the operator

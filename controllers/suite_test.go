@@ -18,7 +18,6 @@ package controllers
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -30,14 +29,9 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 	openshiftv1 "github.com/openshift/api/network/v1"
 	opv1a1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
-	ovnv1 "github.com/ovn-org/ovn-kubernetes/go-controller/pkg/crd/egressfirewall/v1"
 	promv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	promv1a1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1alpha1"
-	odfv1a1 "github.com/red-hat-data-services/odf-operator/api/v1alpha1"
-	ocsv1 "github.com/red-hat-storage/ocs-operator/api/v1"
-	ocsv1alpha1 "github.com/red-hat-storage/ocs-operator/api/v1alpha1"
-	v1 "github.com/red-hat-storage/ocs-osd-deployer/api/v1alpha1"
-	"github.com/red-hat-storage/ocs-osd-deployer/utils"
+	"github.com/red-hat-storage/managed-fusion-agent/utils"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -60,39 +54,19 @@ var (
 	cfg            *rest.Config
 	k8sClient      client.Client
 	testEnv        *envtest.Environment
-	testReconciler *ManagedOCSReconciler
+	testReconciler *ManagedFusionReconciler
 	ctx            context.Context
 	cancel         context.CancelFunc
-	testDeployment string
 )
 
 const (
 	testPrimaryNamespace             = "primary"
 	testSecondaryNamespace           = "secondary"
-	testAddonParamsSecretName        = "test-addon-secret"
-	testPagerdutySecretName          = "test-pagerduty-secret"
-	testDeadMansSnitchSecretName     = "test-deadmanssnitch-secret"
-	testSMTPSecretName               = "test-smtp-secret"
-	testAddonConfigMapName           = "test-addon-configmap"
-	testAddonConfigMapDeleteLabelKey = "test-addon-configmap-delete-label-key"
-	testDeployerCSVName              = "ocs-osd-deployer.x.y.z"
+	testAgentCSVName                 = "managed-fusion-agent.x.y.z"
 	testCustomerNotificationHTMLPath = "../templates/customernotification.html"
-	testDeploymentTypeEnvVarName     = "DEPLOYMENT_TYPE"
-	testRHOBSEndpointEnvVarName      = "RHOBS_ENDPOINT"
-	testRHssoTokenEndpointEnvVarName = "RH_SSO_TOKEN_ENDPOINT"
-	testRHOBSSecretName              = "test-addon-prom-remote-write"
 )
 
 func TestAPIs(t *testing.T) {
-
-	// check for which deployment type we need to run the tests for
-	testDeployment = os.Getenv(testDeploymentTypeEnvVarName)
-	if testDeployment != convergedDeploymentType &&
-		testDeployment != providerDeploymentType &&
-		testDeployment != consumerDeploymentType {
-		panic(fmt.Sprintf("Environment var '%s' should be set to one of '%s' '%s' and '%s' values",
-			testDeploymentTypeEnvVarName, convergedDeploymentType, providerDeploymentType, consumerDeploymentType))
-	}
 	RegisterFailHandler(Fail)
 
 	RunSpecs(t, "Controller Suite")
@@ -103,7 +77,7 @@ var _ = BeforeSuite(func() {
 
 	// write logs from reconciler to a log file
 	var logFile io.Writer
-	logFile, err := os.Create("/tmp/ocs-osd-deployer.log")
+	logFile, err := os.Create("/tmp/managed-fusion-agent.log")
 	Expect(err).ToNot(HaveOccurred())
 
 	go func(logFile io.Writer) {
@@ -132,31 +106,16 @@ var _ = BeforeSuite(func() {
 		Expect(err).ToNot(HaveOccurred())
 		Expect(cfg).ToNot(BeNil())
 
-		err = ocsv1.AddToScheme(scheme.Scheme)
-		Expect(err).NotTo(HaveOccurred())
-
 		err = promv1.AddToScheme(scheme.Scheme)
 		Expect(err).NotTo(HaveOccurred())
 
 		err = promv1a1.AddToScheme(scheme.Scheme)
 		Expect(err).NotTo(HaveOccurred())
 
-		err = v1.AddToScheme(scheme.Scheme)
-		Expect(err).NotTo(HaveOccurred())
-
 		err = opv1a1.AddToScheme(scheme.Scheme)
 		Expect(err).NotTo(HaveOccurred())
 
 		err = openshiftv1.AddToScheme(scheme.Scheme)
-		Expect(err).NotTo(HaveOccurred())
-
-		err = ovnv1.AddToScheme(scheme.Scheme)
-		Expect(err).NotTo(HaveOccurred())
-
-		err = odfv1a1.AddToScheme(scheme.Scheme)
-		Expect(err).NotTo(HaveOccurred())
-
-		err = ocsv1alpha1.AddToScheme(scheme.Scheme)
 		Expect(err).NotTo(HaveOccurred())
 
 		err = configv1.AddToScheme(scheme.Scheme)
@@ -175,28 +134,13 @@ var _ = BeforeSuite(func() {
 		})
 		Expect(err).ToNot(HaveOccurred())
 
-		crdList := map[string]bool{}
-		for _, CRDNames := range []string{EgressNetworkPolicyCRD, EgressFirewallCRD} {
-			crdList[CRDNames] = true
-		}
-
-		testReconciler = &ManagedOCSReconciler{
+		testReconciler = &ManagedFusionReconciler{
 			Client:                       k8sManager.GetClient(),
 			UnrestrictedClient:           k8sClient,
-			Log:                          ctrl.Log.WithName("controllers").WithName("ManagedOCS"),
+			Log:                          ctrl.Log.WithName("controllers").WithName("ManagedFusion"),
 			Scheme:                       k8sManager.GetScheme(),
-			AddonParamSecretName:         testAddonParamsSecretName,
-			AddonConfigMapName:           testAddonConfigMapName,
-			AddonConfigMapDeleteLabelKey: testAddonConfigMapDeleteLabelKey,
-			PagerdutySecretName:          testPagerdutySecretName,
-			DeadMansSnitchSecretName:     testDeadMansSnitchSecretName,
-			SMTPSecretName:               testSMTPSecretName,
+			Namespace:                    testPrimaryNamespace,
 			CustomerNotificationHTMLPath: testCustomerNotificationHTMLPath,
-			DeploymentType:               testDeployment,
-			RHOBSEndpoint:                os.Getenv(testRHOBSEndpointEnvVarName),
-			RHSSOTokenEndpoint:           os.Getenv(testRHssoTokenEndpointEnvVarName),
-			RHOBSSecretName:              testRHOBSSecretName,
-			AvailableCRDs:                crdList,
 		}
 
 		ctrlOptions := &controller.Options{
@@ -223,23 +167,6 @@ var _ = BeforeSuite(func() {
 		secondaryNS.Name = testSecondaryNamespace
 		Expect(k8sClient.Create(ctx, secondaryNS)).Should(Succeed())
 
-		// Create a mock MCG CSV
-		mcgCSV := &opv1a1.ClusterServiceVersion{}
-		mcgCSV.Name = mcgOperatorName
-		mcgCSV.Namespace = testPrimaryNamespace
-		mcgCSV.Spec.InstallStrategy.StrategyName = "test-strategy"
-		mcgCSV.Spec.InstallStrategy.StrategySpec.DeploymentSpecs = getMockMCGCSVDeploymentSpec()
-		Expect(k8sClient.Create(ctx, mcgCSV)).ShouldNot(HaveOccurred())
-
-		// Create the rook ceph operator config map
-		rookConfigMap := &corev1.ConfigMap{}
-		rookConfigMap.Name = "rook-ceph-operator-config"
-		rookConfigMap.Namespace = testPrimaryNamespace
-		rookConfigMap.Data = map[string]string{
-			"test-key": "test-value",
-		}
-		Expect(k8sClient.Create(ctx, rookConfigMap)).ShouldNot(HaveOccurred())
-
 		// Create the aws data config map
 		awsConfigMap := &corev1.ConfigMap{}
 		awsConfigMap.Name = utils.IMDSConfigMapName
@@ -247,23 +174,23 @@ var _ = BeforeSuite(func() {
 		awsConfigMap.Data = map[string]string{
 			utils.CIDRKey: "10.0.0.0/16",
 		}
-		Expect(k8sClient.Create(ctx, awsConfigMap)).ShouldNot(HaveOccurred())
 
+		Expect(k8sClient.Create(ctx, awsConfigMap)).ShouldNot(HaveOccurred())
 		// create a mock deplyer CSV
-		deployerCSV := &opv1a1.ClusterServiceVersion{}
-		deployerCSV.Name = testDeployerCSVName
-		deployerCSV.Namespace = testPrimaryNamespace
-		deployerCSV.Spec.InstallStrategy.StrategyName = "test-strategy"
-		deployerCSV.Spec.InstallStrategy.StrategySpec.DeploymentSpecs = []opv1a1.StrategyDeploymentSpec{
+		agentCSV := &opv1a1.ClusterServiceVersion{}
+		agentCSV.Name = testAgentCSVName
+		agentCSV.Namespace = testPrimaryNamespace
+		agentCSV.Spec.InstallStrategy.StrategyName = "test-strategy"
+		agentCSV.Spec.InstallStrategy.StrategySpec.DeploymentSpecs = []opv1a1.StrategyDeploymentSpec{
 			{
-				Name: "ocs-osd-controller-manager",
+				Name: "managed-fusion-controller-manager",
 				Spec: appsv1.DeploymentSpec{
 					Selector: &metav1.LabelSelector{
-						MatchLabels: map[string]string{"app": "managedocs"},
+						MatchLabels: map[string]string{"app": "managed-fusion-agent"},
 					},
 					Template: corev1.PodTemplateSpec{
 						ObjectMeta: metav1.ObjectMeta{
-							Labels: map[string]string{"app": "managedocs"},
+							Labels: map[string]string{"app": "managed-fusion-agent"},
 						},
 						Spec: corev1.PodSpec{
 							Containers: []corev1.Container{
@@ -277,28 +204,12 @@ var _ = BeforeSuite(func() {
 				},
 			},
 		}
-		Expect(k8sClient.Create(ctx, deployerCSV)).ShouldNot(HaveOccurred())
-
+		Expect(k8sClient.Create(ctx, agentCSV)).ShouldNot(HaveOccurred())
 		//create a mock clusterversion
 		clusterVersion := &configv1.ClusterVersion{}
 		clusterVersion.Name = "version"
 		clusterVersion.Spec.ClusterID = "dummy-cluster-id"
 		Expect(k8sClient.Create(ctx, clusterVersion)).ShouldNot(HaveOccurred())
-
-		// create a mock OCS CSV
-		ocsCSV := &opv1a1.ClusterServiceVersion{}
-		ocsCSV.Name = ocsOperatorName
-		ocsCSV.Namespace = testPrimaryNamespace
-		ocsCSV.Spec.InstallStrategy.StrategyName = "test-strategy"
-		ocsCSV.Spec.InstallStrategy.StrategySpec.DeploymentSpecs = getMockOCSCSVDeploymentSpec()
-		Expect(k8sClient.Create(ctx, ocsCSV)).ShouldNot(HaveOccurred())
-
-		// Create the ManagedOCS resource
-		managedOCS := &v1.ManagedOCS{}
-		managedOCS.Name = managedOCSName
-		managedOCS.Namespace = testPrimaryNamespace
-		Expect(k8sClient.Create(ctx, managedOCS)).ShouldNot(HaveOccurred())
-
 		close(done)
 	}(logFile)
 	Eventually(done, 60).Should(BeClosed())
@@ -311,95 +222,3 @@ var _ = AfterSuite(func() {
 	Expect(err).ToNot(HaveOccurred())
 	GinkgoWriter.ClearTeeWriters()
 })
-
-func getMockOCSCSVDeploymentSpec() []opv1a1.StrategyDeploymentSpec {
-	deploymentSpec := []opv1a1.StrategyDeploymentSpec{
-		{
-			Name: "deployment1",
-			Spec: appsv1.DeploymentSpec{
-				Selector: &metav1.LabelSelector{
-					MatchLabels: map[string]string{"app": "ocs-operator"},
-				},
-				Template: corev1.PodTemplateSpec{
-					ObjectMeta: metav1.ObjectMeta{
-						Labels: map[string]string{"app": "ocs-operator"},
-					},
-					Spec: corev1.PodSpec{
-						Containers: []corev1.Container{
-							{
-								Name: "ocs-operator",
-							},
-						},
-					},
-				},
-			},
-		},
-		{
-			Name: "deployment2",
-			Spec: appsv1.DeploymentSpec{
-				Selector: &metav1.LabelSelector{
-					MatchLabels: map[string]string{"app": "rook-ceph-operator"},
-				},
-				Template: corev1.PodTemplateSpec{
-					ObjectMeta: metav1.ObjectMeta{
-						Labels: map[string]string{"app": "rook-ceph-operator"},
-					},
-					Spec: corev1.PodSpec{
-						Containers: []corev1.Container{
-							{
-								Name: "rook-ceph-operator",
-							},
-						},
-					},
-				},
-			},
-		},
-		{
-			Name: "deployment3",
-			Spec: appsv1.DeploymentSpec{
-				Selector: &metav1.LabelSelector{
-					MatchLabels: map[string]string{"app": "ocs-metrics-exporter"},
-				},
-				Template: corev1.PodTemplateSpec{
-					ObjectMeta: metav1.ObjectMeta{
-						Labels: map[string]string{"app": "ocs-metrics-exporter"},
-					},
-					Spec: corev1.PodSpec{
-						Containers: []corev1.Container{
-							{
-								Name: "ocs-metrics-exporter",
-							},
-						},
-					},
-				},
-			},
-		},
-	}
-	return deploymentSpec
-}
-
-func getMockMCGCSVDeploymentSpec() []opv1a1.StrategyDeploymentSpec {
-	deploymentSpec := []opv1a1.StrategyDeploymentSpec{
-		{
-			Name: "noobaa-operator",
-			Spec: appsv1.DeploymentSpec{
-				Selector: &metav1.LabelSelector{
-					MatchLabels: map[string]string{"noobaa-operator": "deployment"},
-				},
-				Template: corev1.PodTemplateSpec{
-					ObjectMeta: metav1.ObjectMeta{
-						Labels: map[string]string{"noobaa-operator": "deployment"},
-					},
-					Spec: corev1.PodSpec{
-						Containers: []corev1.Container{
-							{
-								Name: "noobaa-operator",
-							},
-						},
-					},
-				},
-			},
-		},
-	}
-	return deploymentSpec
-}

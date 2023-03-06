@@ -20,7 +20,7 @@ BUNDLE_METADATA_OPTS ?= $(BUNDLE_CHANNELS) $(BUNDLE_DEFAULT_CHANNEL)
 OUTPUT_DIR ?= bundle
 
 # Image URL to use all building/pushing image targets
-IMG ?= ocs-osd-deployer:latest
+IMG ?= managed-fusion-agent:latest
 
 # USE_IMAGE_DIGESTS defines if images are resolved via tags or digests
 USE_IMAGE_DIGESTS ?= false
@@ -83,7 +83,7 @@ endif
 # ===== Make targets ===== #
 
 .PHONY: all
-all: manager readinessServer awsDataGather
+all: manager awsDataGather
 
 ##@ General
 
@@ -120,30 +120,15 @@ fmt: ## Run go fmt against code.
 vet: ## Run go vet against code.
 	go vet ./...
 
-.PHONY: test-converged
-test-converged: manifests generate fmt vet envtest ## Run converged mode tests.
-	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path)" DEPLOYMENT_TYPE=converged go test ./... -coverprofile cover.out
-
-.PHONY: test-provider
-test-provider: manifests generate fmt vet envtest ## Run provider mode tests.
-	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path)" DEPLOYMENT_TYPE=provider go test ./... -coverprofile cover.out
-
-.PHONY: test-consumer
-test-consumer: manifests generate fmt vet envtest ## Run consumer mode tests.
-	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path)" DEPLOYMENT_TYPE=consumer go test ./... -coverprofile cover.out
-
 .PHONY: test
-test: test-converged test-provider test-consumer ## Run tests.
+test: manifests generate fmt vet envtest ## Run tests.
+	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path)" go test ./... -coverprofile cover.out
 
 ##@ Build
 
 .PHONY: manager
 manager: generate fmt vet ## Build manager binary.
 	go build -o bin/manager main.go
-
-.PHONY: readinessServer
-readinessServer: fmt vet ## Build readiness probe binary.
-	go build -o bin/readinessServer readinessProbe/main.go
 
 .PHONY: awsDataGather
 awsDataGather: cmd/awsDataGather/main.go pkg/aws/imds_client.go
@@ -152,12 +137,6 @@ awsDataGather: cmd/awsDataGather/main.go pkg/aws/imds_client.go
 .PHONY: export_env_vars
 export_env_vars:
 export NAMESPACE = openshift-storage
-export ADDON_NAME = ocs-converged
-export SOP_ENDPOINT = https://red-hat-storage.github.io/ocs-sop/sop/OSD/{{ .GroupLabels.alertname }}.html
-export ALERT_SMTP_FROM_ADDR = noreply-test@test.com
-export DEPLOYMENT_TYPE = converged
-export RHOBS_ENDPOINT = https://rhobs.com/fake_url
-export RH_SSO_TOKEN_ENDPOINT = https://sso.com/fake_url
 
 .PHONY: run
 run: generate fmt vet manifests export_env_vars ## Run a controller from your host.
@@ -207,10 +186,10 @@ bundle: manifests kustomize operator-sdk ## Generate bundle manifests and metada
 	cd config/aws-data-gather && $(KUSTOMIZE) edit set image controller=$(IMG)
 	cd config/manifests/bases && \
 		rm -rf kustomization.yaml && \
-		$(KUSTOMIZE) create --resources ocs-osd-deployer.clusterserviceversion.yaml && \
+		$(KUSTOMIZE) create --resources managed-fusion-agent.clusterserviceversion.yaml && \
 		$(KUSTOMIZE) edit add annotation --force 'olm.skipRange':">=0.0.1 <$(VERSION)" && \
-		$(KUSTOMIZE) edit add patch --name ocs-osd-deployer.v0.0.0 --kind ClusterServiceVersion \
-		--patch '[{"op": "replace", "path": "/spec/replaces", "value": "ocs-osd-deployer.v$(REPLACES)"}]'
+		$(KUSTOMIZE) edit add patch --name managed-fusion-agent.v0.0.0 --kind ClusterServiceVersion \
+		--patch '[{"op": "replace", "path": "/spec/replaces", "value": "managed-fusion-agent.v$(REPLACES)"}]'
 	$(KUSTOMIZE) build config/manifests | $(OPERATOR_SDK) generate bundle \
 		-q \
 		--extra-service-accounts prometheus-k8s,aws-data-gather \
