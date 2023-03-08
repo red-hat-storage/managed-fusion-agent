@@ -1,8 +1,18 @@
 domain: ibm.com
-layout: go.kubebuilder.io/v2
-projectName: managed-fusion-agent
-repo: github.com/red-hat-storage/managed-fusion-agent
-version: "3"
+layout:
+- go.kubebuilder.io/v2
 plugins:
   manifests.sdk.operatorframework.io/v2: {}
   scorecard.sdk.operatorframework.io/v2: {}
+projectName: managed-fusion-agent
+repo: github.com/red-hat-storage/managed-fusion-agent
+resources:
+- api:
+    crdVersion: v1beta1
+    namespaced: true
+  domain: ibm.com
+  group: misf
+  kind: ManagedFusionOffering
+  path: github.com/red-hat-storage/managed-fusion-agent/api/v1alpha1
+  version: v1alpha1
+version: "3"
