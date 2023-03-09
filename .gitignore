@@ -6,7 +6,7 @@
 *.so
 *.dylib
 bin
-ocs-osd-deployer
+managed-fusion-agent
 
 # Generated bundle and manifests
 bundle.Dockerfile
@@ -23,7 +23,7 @@ tools/bundle
 
 !vendor/**/zz_generated.*
 
-# Ignore local deployer image changes
+# Ignore local agent image changes
 config/manager/kustomization.yaml
 
 # editor and IDE paraphernalia

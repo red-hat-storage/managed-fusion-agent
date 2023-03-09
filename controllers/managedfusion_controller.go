@@ -102,7 +102,7 @@ type pagerDutyConfig struct {
 	ServiceKey  string `yaml:"serviceKey"`
 }
 
-// Add necessary rbac permissions for managedfusiondeployment finalizer in order to set blockOwnerDeletion.
+// Add necessary rbac permissions for managedfusion finalizer in order to set blockOwnerDeletion.
 // +kubebuilder:rbac:groups="monitoring.coreos.com",resources={alertmanagers,prometheuses,alertmanagerconfigs},verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="monitoring.coreos.com",resources=prometheusrules,verbs=get;list;watch;create;update;patch
 // +kubebuilder:rbac:groups="monitoring.coreos.com",resources=podmonitors,verbs=get;list;watch;update;patch
@@ -119,7 +119,7 @@ type pagerDutyConfig struct {
 // +kubebuilder:rbac:groups="",resources=namespaces,verbs=get;list;watch;delete
 // +kubebuilder:rbac:groups="config.openshift.io",resources=clusterversions,verbs=get;watch;list
 
-// SetupWithManager creates an setup a ManagedFusionDeployment to work with the provided manager
+// SetupWithManager creates an setup a ManagedFusion to work with the provided manager
 func (r *ManagedFusionReconciler) SetupWithManager(mgr ctrl.Manager, ctrlOptions *controller.Options) error {
 	if ctrlOptions == nil {
 		ctrlOptions = &controller.Options{
@@ -184,10 +184,10 @@ func (r *ManagedFusionReconciler) SetupWithManager(mgr ctrl.Manager, ctrlOptions
 		Complete(r)
 }
 
-// Reconcile changes to all owned resource based on the infromation provided by the ManangedFusionDeployment secret resource
+// Reconcile changes to all owned resource based on the infromation provided by the ManangedFusion secret resource
 func (r *ManagedFusionReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := r.Log.WithValues("req.Namespace", req.Namespace, "req.Name", req.Name)
-	log.Info("Starting reconcile for ManangedFusionDeployment")
+	log.Info("Starting reconcile for ManangedFusion")
 
 	r.initReconciler(ctx, req)
 	if err := r.get(r.managedFusionSecret); err != nil {
@@ -343,26 +343,26 @@ func (r *ManagedFusionReconciler) reconcilePrometheus() error {
 		desired := templates.PrometheusTemplate.DeepCopy()
 		utils.AddLabel(r.prometheus, monLabelKey, monLabelValue)
 
-		// use the container image of kube-rbac-proxy that comes in deployer CSV
+		// use the container image of kube-rbac-proxy that comes in agent CSV
 		// for prometheus kube-rbac-proxy sidecar
-		deployerCSV, err := r.getCSVByPrefix(agentCSVPrefix)
+		agentCSV, err := r.getCSVByPrefix(agentCSVPrefix)
 		if err != nil {
 			return fmt.Errorf("Unable to set image for kube-rbac-proxy container: %v", err)
 		}
 
-		deployerCSVDeployments := deployerCSV.Spec.InstallStrategy.StrategySpec.DeploymentSpecs
-		var deployerCSVDeployment *opv1a1.StrategyDeploymentSpec = nil
-		for key := range deployerCSVDeployments {
-			deployment := &deployerCSVDeployments[key]
+		agentCSVDeployments := agentCSV.Spec.InstallStrategy.StrategySpec.DeploymentSpecs
+		var agentCSVDeployment *opv1a1.StrategyDeploymentSpec = nil
+		for key := range agentCSVDeployments {
+			deployment := &agentCSVDeployments[key]
 			if deployment.Name == "managed-fusion-controller-manager" {
-				deployerCSVDeployment = deployment
+				agentCSVDeployment = deployment
 			}
 		}
 
-		deployerCSVContainers := deployerCSVDeployment.Spec.Template.Spec.Containers
+		agentCSVContainers := agentCSVDeployment.Spec.Template.Spec.Containers
 		var kubeRbacImage string
-		for key := range deployerCSVContainers {
-			container := deployerCSVContainers[key]
+		for key := range agentCSVContainers {
+			container := agentCSVContainers[key]
 			if container.Name == "kube-rbac-proxy" {
 				kubeRbacImage = container.Image
 			}
@@ -723,7 +723,7 @@ func (r *ManagedFusionReconciler) delete(obj client.Object) error {
 }
 
 func (r *ManagedFusionReconciler) own(resource metav1.Object) error {
-	// Ensure ManangedFusionDeployment secret ownership on a resource
+	// Ensure ManangedFusion secret ownership on a resource
 	if err := ctrl.SetControllerReference(r.managedFusionSecret, resource, r.Scheme); err != nil {
 		return err
 	}

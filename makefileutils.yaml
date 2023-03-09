@@ -57,7 +57,7 @@ spec:
   install:
     spec:
       deployments:
-        - name: ocs-osd-controller-manager
+        - name: managed-fusion-controller-manager
           spec:
             selector:
               matchLabels:
