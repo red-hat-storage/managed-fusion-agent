@@ -37,6 +37,7 @@ import (
 	operators "github.com/operator-framework/api/pkg/operators/v1alpha1"
 	promv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	promv1a1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1alpha1"
+	misfv1a1 "github.com/red-hat-storage/managed-fusion-agent/api/v1alpha1"
 	"github.com/red-hat-storage/managed-fusion-agent/controllers"
 	// +kubebuilder:scaffold:imports
 )
@@ -69,7 +70,11 @@ func addAllSchemes(scheme *runtime.Scheme) {
 	utilruntime.Must(openshiftv1.AddToScheme(scheme))
 
 	utilruntime.Must(configv1.AddToScheme(scheme))
+
+	utilruntime.Must(misfv1a1.AddToScheme(scheme))
 	// +kubebuilder:scaffold:scheme
+
+	pluginAddToScheme(scheme)
 }
 
 func main() {
@@ -111,6 +116,15 @@ func main() {
 		setupLog.Error(err, "Unable to create controller", "controller", "ManagedFusion")
 		os.Exit(1)
 	}
+
+	if err = (&controllers.ManagedFusionOfferingReconciler{
+		Client: mgr.GetClient(),
+		Log:    ctrl.Log.WithName("controllers").WithName("ManagedFusionOffering"),
+		Scheme: mgr.GetScheme(),
+	}).SetupWithManager(mgr, nil); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "ManagedFusionOffering")
+		os.Exit(1)
+	}
 	// +kubebuilder:scaffold:builder
 
 	setupLog.Info("Starting manager")
@@ -133,3 +147,6 @@ func getUnrestrictedClient() client.Client {
 	}
 	return k8sClient
 }
+
+// This function is a placeholder for offering plugin integration
+func pluginAddToScheme(scheme *runtime.Scheme) {}
