@@ -1,0 +1,11 @@
+apiVersion: misf.ibm.com/v1alpha1
+kind: ManagedFusionOffering
+metadata:
+  name: managedfusionoffering-sample
+  namespace: fusion-storage
+spec:
+  kind: DF
+  release: "4.12"
+  config: 
+    usableCapacityInTiB: "4"
+    onboardingValidationKey: MIICIjANBgkqhkiG9w0BAQEFAAOCAg8AMIICCgKCAgEAshEZLax4CqF6J1rgvBcjK9wVpM9BGxeJXy5LCXL39jkTkn5Nu2Fdxjo90ppycYtrfMXXF3KZGcw75LfB+vLa7P7Q1bjT6B8mn4drZfDZJ4CGS++FUbA3NpyhdGrwB0rGmXOfF0NwhKZM+lkCAwEAAQ==
