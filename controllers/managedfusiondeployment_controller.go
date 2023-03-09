@@ -19,7 +19,7 @@ package controllers
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
+	"os"
 	"strings"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -470,7 +470,7 @@ func (r *ManagedFusionReconciler) reconcileAlertmanagerConfig() error {
 		alertingAddressList := []string{}
 		alertingAddressList = append(alertingAddressList,
 			r.smtpConfigData.NotificationEmails...)
-		smtpHTML, err := ioutil.ReadFile(r.CustomerNotificationHTMLPath)
+		smtpHTML, err := os.ReadFile(r.CustomerNotificationHTMLPath)
 		if err != nil {
 			return fmt.Errorf("unable to read customernotification.html file: %v", err)
 		}

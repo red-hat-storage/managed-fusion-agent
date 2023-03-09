@@ -73,12 +73,86 @@ var (
 
 var PrometheusTemplate = promv1.Prometheus{
 	Spec: promv1.PrometheusSpec{
-		ExternalLabels:         map[string]string{},
-		ServiceAccountName:     "prometheus-k8s",
-		ServiceMonitorSelector: &resourceSelector,
-		PodMonitorSelector:     &resourceSelector,
-		RuleSelector:           &resourceSelector,
-		EnableAdminAPI:         false,
+		CommonPrometheusFields: promv1.CommonPrometheusFields{
+			ExternalLabels:         map[string]string{},
+			ServiceAccountName:     "prometheus-k8s",
+			ServiceMonitorSelector: &resourceSelector,
+			PodMonitorSelector:     &resourceSelector,
+			Resources:              utils.GetResourceRequirements("prometheus"),
+			ListenLocal:            true,
+			Containers: []corev1.Container{{
+				Name: "kube-rbac-proxy",
+				Args: []string{
+					fmt.Sprintf("--secure-listen-address=0.0.0.0:%d", KubeRBACProxyPortNumber),
+					"--upstream=http://127.0.0.1:9090/",
+					"--logtostderr=true",
+					"--v=10",
+					"--tls-cert-file=/etc/tls-secret/tls.crt",
+					"--tls-private-key-file=/etc/tls-secret/tls.key",
+					"--client-ca-file=/var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt",
+					"--config-file=/etc/kube-rbac-config/config-file.json",
+				},
+				Ports: []corev1.ContainerPort{{
+					Name:          "https",
+					ContainerPort: int32(KubeRBACProxyPortNumber),
+				}},
+				VolumeMounts: []corev1.VolumeMount{
+					{
+						Name:      "serving-cert",
+						MountPath: "/etc/tls-secret",
+					},
+					{
+						Name:      "kube-rbac-config",
+						MountPath: "/etc/kube-rbac-config",
+					},
+				},
+				Resources: utils.GetResourceRequirements("kube-rbac-proxy"),
+			}},
+			Volumes: []corev1.Volume{
+				{
+					Name: "serving-cert",
+					VolumeSource: corev1.VolumeSource{
+						Secret: &corev1.SecretVolumeSource{
+							SecretName: PrometheusServingCertSecretName,
+						},
+					},
+				},
+				{
+					Name: "kube-rbac-config",
+					VolumeSource: corev1.VolumeSource{
+						ConfigMap: &corev1.ConfigMapVolumeSource{
+							LocalObjectReference: corev1.LocalObjectReference{
+								Name: PrometheusKubeRBACPoxyConfigMapName,
+							},
+						},
+					},
+				},
+			},
+			// RemoteWrite: []promv1.RemoteWriteSpec{
+			// 	{
+			// 		OAuth2: &promv1.OAuth2{
+			// 			ClientSecret: corev1.SecretKeySelector{
+			// 				LocalObjectReference: corev1.LocalObjectReference{},
+			// 			},
+			// 			ClientID: promv1.SecretOrConfigMap{
+			// 				Secret: &corev1.SecretKeySelector{
+			// 					LocalObjectReference: corev1.LocalObjectReference{},
+			// 				},
+			// 			},
+			// 			EndpointParams: map[string]string{},
+			// 		},
+			// 		WriteRelabelConfigs: []promv1.RelabelConfig{
+			// 			{
+			// 				SourceLabels: []string{"__name__", "alertname"},
+			// 				Regex:        getRelableRegex(alerts, metrics),
+			// 				Action:       "keep",
+			// 			},
+			// 		},
+			// 	},
+			// },
+		},
+		RuleSelector:   &resourceSelector,
+		EnableAdminAPI: false,
 		Alerting: &promv1.AlertingSpec{
 			Alertmanagers: []promv1.AlertmanagerEndpoints{{
 				Namespace: "",
@@ -86,78 +160,6 @@ var PrometheusTemplate = promv1.Prometheus{
 				Port:      intstr.FromString("web"),
 			}},
 		},
-		Resources:   utils.GetResourceRequirements("prometheus"),
-		ListenLocal: true,
-		Containers: []corev1.Container{{
-			Name: "kube-rbac-proxy",
-			Args: []string{
-				fmt.Sprintf("--secure-listen-address=0.0.0.0:%d", KubeRBACProxyPortNumber),
-				"--upstream=http://127.0.0.1:9090/",
-				"--logtostderr=true",
-				"--v=10",
-				"--tls-cert-file=/etc/tls-secret/tls.crt",
-				"--tls-private-key-file=/etc/tls-secret/tls.key",
-				"--client-ca-file=/var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt",
-				"--config-file=/etc/kube-rbac-config/config-file.json",
-			},
-			Ports: []corev1.ContainerPort{{
-				Name:          "https",
-				ContainerPort: int32(KubeRBACProxyPortNumber),
-			}},
-			VolumeMounts: []corev1.VolumeMount{
-				{
-					Name:      "serving-cert",
-					MountPath: "/etc/tls-secret",
-				},
-				{
-					Name:      "kube-rbac-config",
-					MountPath: "/etc/kube-rbac-config",
-				},
-			},
-			Resources: utils.GetResourceRequirements("kube-rbac-proxy"),
-		}},
-		Volumes: []corev1.Volume{
-			{
-				Name: "serving-cert",
-				VolumeSource: corev1.VolumeSource{
-					Secret: &corev1.SecretVolumeSource{
-						SecretName: PrometheusServingCertSecretName,
-					},
-				},
-			},
-			{
-				Name: "kube-rbac-config",
-				VolumeSource: corev1.VolumeSource{
-					ConfigMap: &corev1.ConfigMapVolumeSource{
-						LocalObjectReference: corev1.LocalObjectReference{
-							Name: PrometheusKubeRBACPoxyConfigMapName,
-						},
-					},
-				},
-			},
-		},
-		// RemoteWrite: []promv1.RemoteWriteSpec{
-		// 	{
-		// 		OAuth2: &promv1.OAuth2{
-		// 			ClientSecret: corev1.SecretKeySelector{
-		// 				LocalObjectReference: corev1.LocalObjectReference{},
-		// 			},
-		// 			ClientID: promv1.SecretOrConfigMap{
-		// 				Secret: &corev1.SecretKeySelector{
-		// 					LocalObjectReference: corev1.LocalObjectReference{},
-		// 				},
-		// 			},
-		// 			EndpointParams: map[string]string{},
-		// 		},
-		// 		WriteRelabelConfigs: []promv1.RelabelConfig{
-		// 			{
-		// 				SourceLabels: []string{"__name__", "alertname"},
-		// 				Regex:        getRelableRegex(alerts, metrics),
-		// 				Action:       "keep",
-		// 			},
-		// 		},
-		// 	},
-		// },
 	},
 }
 
