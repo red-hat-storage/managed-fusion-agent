@@ -1,5 +1,4 @@
 ## Append samples you want in your CSV to this file as resources ##
 resources:
-- ocs_v1alpha1_managedocs.yaml
 - misf_v1alpha1_managedfusionoffering.yaml
 # +kubebuilder:scaffold:manifestskustomizesamples

@@ -1,5 +1,0 @@
-apiVersion: ocs.openshift.io/v1alpha1
-kind: ManagedOCS
-metadata:
-  name: managedocs-sample
-
