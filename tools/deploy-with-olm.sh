@@ -28,14 +28,14 @@ fi
 # Default bundle dir
 OUTPUT_DIR=./tools/bundle
 # Bundle image
-BUNDLE_NAME=${BUNDLE_NAME:-ocs-osd-deployer-bundle}
+BUNDLE_NAME=${BUNDLE_NAME:-managed-fusion-agent-bundle}
 BUNDLE_VERSION=${BUNDLE_VERSION:-latest}
 BUNDLE_IMAGE=${BUNDLE_IMAGE:-${IMAGE_REPO}/${BUNDLE_NAME}:${BUNDLE_VERSION}}
 
-# Deployer image
-DEPLOYER_NAME=${DEPLOYER_NAME:-ocs-osd-deployer}
-DEPLOYER_VERSION=${DEPLOYER_VERSION:-latest}
-DEPLOYER_IMAGE=${DEPLOYER_IMAGE:-${IMAGE_REPO}/${DEPLOYER_NAME}:${DEPLOYER_VERSION}}
+# Agent image
+AGENT_NAME=${AGENT_NAME:-managed-fusion-agent}
+AGENT_VERSION=${AGENT_VERSION:-latest}
+AGENT_IMAGE=${AGENT_IMAGE:-${IMAGE_REPO}/${AGENT_NAME}:${AGENT_VERSION}}
 
 # Deploy target
 TARGET_NAMESPACE=${TARGET_NAMESPACE:-openshift-storage}
@@ -54,14 +54,14 @@ SMTP_HOST=${SMTP_HOST:-smtp.sendgrid.net}
 SMTP_PORT=${SMTP_PORT:-587}
 SMTP_USERNAME=${SMTP_USERNAME:-apikey}
 
-# Generate the deployer image 
-blue "Generate deployer image: ${DEPLOYER_IMAGE}"
-exit_on_err make docker-build IMG=${DEPLOYER_IMAGE}
-exit_on_err make docker-push IMG=${DEPLOYER_IMAGE}
+# Generate the agent image
+blue "Generate agent image: ${AGENT_IMAGE}"
+exit_on_err make docker-build IMG=${AGENT_IMAGE}
+exit_on_err make docker-push IMG=${AGENT_IMAGE}
 
 # Generate the olm bundle image
 blue "Generate and push the olm bundle image: ${BUNDLE_IMAGE}"
-exit_on_err make bundle IMG=${DEPLOYER_IMAGE} OUTPUT_DIR=${OUTPUT_DIR}
+exit_on_err make bundle IMG=${AGENT_IMAGE} OUTPUT_DIR=${OUTPUT_DIR}
 exit_on_err sed -i "s|- name: ADDON_NAME|- {name: ADDON_NAME, value: ${ADDON_NAME}}|" ${BUNDLE_FILE}
 exit_on_err sed -i "s|- name: SOP_ENDPOINT|- {name: SOP_ENDPOINT, value: \'${SOP_ENDPOINT}\'}|" ${BUNDLE_FILE}
 exit_on_err make bundle-build BUNDLE_IMG=${BUNDLE_IMAGE}

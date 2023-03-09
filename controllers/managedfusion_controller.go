@@ -343,26 +343,26 @@ func (r *ManagedFusionReconciler) reconcilePrometheus() error {
 		desired := templates.PrometheusTemplate.DeepCopy()
 		utils.AddLabel(r.prometheus, monLabelKey, monLabelValue)
 
-		// use the container image of kube-rbac-proxy that comes in deployer CSV
+		// use the container image of kube-rbac-proxy that comes in agent CSV
 		// for prometheus kube-rbac-proxy sidecar
-		deployerCSV, err := r.getCSVByPrefix(agentCSVPrefix)
+		agentCSV, err := r.getCSVByPrefix(agentCSVPrefix)
 		if err != nil {
 			return fmt.Errorf("Unable to set image for kube-rbac-proxy container: %v", err)
 		}
 
-		deployerCSVDeployments := deployerCSV.Spec.InstallStrategy.StrategySpec.DeploymentSpecs
-		var deployerCSVDeployment *opv1a1.StrategyDeploymentSpec = nil
-		for key := range deployerCSVDeployments {
-			deployment := &deployerCSVDeployments[key]
+		agentCSVDeployments := agentCSV.Spec.InstallStrategy.StrategySpec.DeploymentSpecs
+		var agentCSVDeployment *opv1a1.StrategyDeploymentSpec = nil
+		for key := range agentCSVDeployments {
+			deployment := &agentCSVDeployments[key]
 			if deployment.Name == "managed-fusion-controller-manager" {
-				deployerCSVDeployment = deployment
+				agentCSVDeployment = deployment
 			}
 		}
 
-		deployerCSVContainers := deployerCSVDeployment.Spec.Template.Spec.Containers
+		agentCSVContainers := agentCSVDeployment.Spec.Template.Spec.Containers
 		var kubeRbacImage string
-		for key := range deployerCSVContainers {
-			container := deployerCSVContainers[key]
+		for key := range agentCSVContainers {
+			container := agentCSVContainers[key]
 			if container.Name == "kube-rbac-proxy" {
 				kubeRbacImage = container.Image
 			}
