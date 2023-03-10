@@ -85,6 +85,7 @@ rules:
   - misf.ibm.com
   resources:
   - managedfusionofferings
+  - managedfusionofferings/finalizers
   verbs:
   - create
   - delete
@@ -166,6 +167,20 @@ rules:
   - create
   - get
   - list
+  - update
+  - watch
+- apiGroups:
+  - operators.coreos.com
+  resources:
+  - catalogsources
+  - operatorgroups
+  - subscriptions
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
   - update
   - watch
 - apiGroups:

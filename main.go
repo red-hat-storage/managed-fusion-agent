@@ -20,6 +20,7 @@ import (
 	"flag"
 	"os"
 
+	opv1 "github.com/operator-framework/api/pkg/operators/v1"
 	"go.uber.org/zap/zapcore"
 	v1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -72,6 +73,8 @@ func addAllSchemes(scheme *runtime.Scheme) {
 	utilruntime.Must(configv1.AddToScheme(scheme))
 
 	utilruntime.Must(misfv1a1.AddToScheme(scheme))
+
+	utilruntime.Must(opv1.AddToScheme(scheme))
 	// +kubebuilder:scaffold:scheme
 
 	pluginAddToScheme(scheme)
