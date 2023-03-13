@@ -32,12 +32,13 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	controller "sigs.k8s.io/controller-runtime/pkg/controller"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
 const (
-	ocsOperatorGroupName = "ocs-operator-og"
-	ocsCatalogSourceName = "ocs-operator-cat-src"
-	ocsSubscriptionName  = "ocs-operator"
+	operatorGroupName = "managed-fusion-og"
+	catalogSourceName = "managed-fusion-cat-src"
+	subscriptionName  = "managed-fusion-sub"
 )
 
 // ManagedFusionOfferingReconciler reconciles a ManagedFusionOffering object
@@ -79,6 +80,10 @@ func (r *ManagedFusionOfferingReconciler) Reconcile(ctx context.Context, req ctr
 		return ctrl.Result{}, fmt.Errorf("Unable to get managedFusionOffering: %v", err)
 	}
 
+	if result, err := r.reconcilePhases(); err != nil {
+		return result, fmt.Errorf("An error was encountered during reconcilePhases: %v", err)
+	}
+
 	if result, err := pluginReconcile(r); err != nil {
 		return ctrl.Result{}, fmt.Errorf("An error was encountered during reconcile: %v", err)
 	} else {
@@ -95,36 +100,40 @@ func (r *ManagedFusionOfferingReconciler) initReconciler(ctx context.Context, re
 	r.managedFusionOffering.Namespace = req.Namespace
 
 	r.ocsOperatorGroup = &opv1.OperatorGroup{}
-	r.ocsOperatorGroup.Name = ocsOperatorGroupName
+	r.ocsOperatorGroup.Name = operatorGroupName
 	r.ocsOperatorGroup.Namespace = req.Namespace
 
 	r.ocsCatalogSource = &opv1a1.CatalogSource{}
-	r.ocsCatalogSource.Name = ocsCatalogSourceName
+	r.ocsCatalogSource.Name = catalogSourceName
 	r.ocsCatalogSource.Namespace = req.Namespace
 
 	r.ocsSubscription = &opv1a1.Subscription{}
-	r.ocsSubscription.Name = ocsSubscriptionName
+	r.ocsSubscription.Name = subscriptionName
 	r.ocsSubscription.Namespace = req.Namespace
 }
 
-// This function is a placeholder for offering plugin integration
-func pluginReconcile(r *ManagedFusionOfferingReconciler) (ctrl.Result, error) {
-	if err := reconcileOCSOperatorGroup(r); err != nil {
+func (r *ManagedFusionOfferingReconciler) reconcilePhases() (reconcile.Result, error) {
+	if err := r.reconcileOperatorGroup(); err != nil {
 		return ctrl.Result{}, err
 	}
-	if err := reconcileOCSSource(r); err != nil {
+	if err := r.reconcileCatalogSource(); err != nil {
 		return ctrl.Result{}, err
 	}
-	if err := reconcileOCSSubscription(r); err != nil {
+	if err := r.reconcileSubscription(); err != nil {
 		return ctrl.Result{}, err
 	}
-	if err := reconcileOCSOperatorInstallPlan(r); err != nil {
+	if err := r.reconcileInstallPlan(); err != nil {
 		return ctrl.Result{}, err
 	}
 	return ctrl.Result{}, nil
 }
 
-func reconcileOCSOperatorGroup(r *ManagedFusionOfferingReconciler) error {
+// This function is a placeholder for offering plugin integration
+func pluginReconcile(r *ManagedFusionOfferingReconciler) (ctrl.Result, error) {
+	return ctrl.Result{}, nil
+}
+
+func (r *ManagedFusionOfferingReconciler) reconcileOperatorGroup() error {
 	r.Log.Info("Reconciling DF Offering Operator Group")
 	_, err := ctrl.CreateOrUpdate(r.ctx, r.Client, r.ocsOperatorGroup, func() error {
 		if err := r.own(r.ocsOperatorGroup); err != nil {
@@ -139,17 +148,15 @@ func reconcileOCSOperatorGroup(r *ManagedFusionOfferingReconciler) error {
 	return nil
 }
 
-func reconcileOCSSource(r *ManagedFusionOfferingReconciler) error {
+func (r *ManagedFusionOfferingReconciler) reconcileCatalogSource() error {
 	r.Log.Info("Reconciling DF Offering Source")
 	_, err := ctrl.CreateOrUpdate(r.ctx, r.Client, r.ocsCatalogSource, func() error {
 		if err := r.own(r.ocsCatalogSource); err != nil {
 			return err
 		}
 		desired := templates.OCSCatalogSource.DeepCopy()
-		switch r.managedFusionOffering.Spec.Release {
-		case "4.11":
-			desired.Spec.Image = "registry.redhat.io/redhat/redhat-operator-index:v4.11"
-		}
+		// A hook will be required to get catalog for a specific offering
+		desired.Spec.Image = "registry.redhat.io/redhat/redhat-operator-index:v4.11"
 		r.ocsCatalogSource.Spec = desired.Spec
 		return nil
 	})
@@ -159,7 +166,7 @@ func reconcileOCSSource(r *ManagedFusionOfferingReconciler) error {
 	return nil
 }
 
-func reconcileOCSSubscription(r *ManagedFusionOfferingReconciler) error {
+func (r *ManagedFusionOfferingReconciler) reconcileSubscription() error {
 	r.Log.Info("Reconciling DF Offering Subscription")
 	_, err := ctrl.CreateOrUpdate(r.ctx, r.Client, r.ocsSubscription, func() error {
 		if err := r.own(r.ocsSubscription); err != nil {
@@ -168,11 +175,9 @@ func reconcileOCSSubscription(r *ManagedFusionOfferingReconciler) error {
 		desired := templates.OCSSubscription.DeepCopy()
 		desired.Spec.CatalogSource = r.ocsCatalogSource.Name
 		desired.Spec.CatalogSourceNamespace = r.ocsCatalogSource.Namespace
-		switch r.managedFusionOffering.Spec.Release {
-		case "4.11":
-			desired.Spec.Channel = "stable-4.11"
-			desired.Spec.StartingCSV = "ocs-operator.v4.11.2"
-		}
+		// A hook will be required to get channel and startingCSV for a specific offering
+		desired.Spec.Channel = "stable-4.11"
+		desired.Spec.StartingCSV = "ocs-operator.v4.11.2"
 		r.ocsSubscription.Spec = desired.Spec
 		return nil
 
@@ -183,7 +188,7 @@ func reconcileOCSSubscription(r *ManagedFusionOfferingReconciler) error {
 	return nil
 }
 
-func reconcileOCSOperatorInstallPlan(r *ManagedFusionOfferingReconciler) error {
+func (r *ManagedFusionOfferingReconciler) reconcileInstallPlan() error {
 	r.Log.Info("Reconciling DF Operator InstallPlan")
 	ocsOperatorCSV := &opv1a1.ClusterServiceVersion{}
 	ocsOperatorCSV.Name = r.ocsSubscription.Spec.StartingCSV
