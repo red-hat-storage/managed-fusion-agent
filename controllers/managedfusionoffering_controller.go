@@ -37,7 +37,7 @@ import (
 
 const (
 	operatorGroupName = "managed-fusion-og"
-	catalogSourceName = "managed-fusion-cat-src"
+	catalogSourceName = "managed-fusion-catsrc"
 	subscriptionName  = "managed-fusion-sub"
 )
 
@@ -143,7 +143,7 @@ func (r *ManagedFusionOfferingReconciler) reconcileOperatorGroup() error {
 		return nil
 	})
 	if err != nil {
-		return err
+		return fmt.Errorf("Failed to create/update operatorGroup: %v", err)
 	}
 	return nil
 }
@@ -161,7 +161,7 @@ func (r *ManagedFusionOfferingReconciler) reconcileCatalogSource() error {
 		return nil
 	})
 	if err != nil {
-		return err
+		return fmt.Errorf("Failed to create/update catalogSource: %v", err)
 	}
 	return nil
 }
@@ -183,7 +183,7 @@ func (r *ManagedFusionOfferingReconciler) reconcileSubscription() error {
 
 	})
 	if err != nil {
-		return err
+		return fmt.Errorf("Failed to create/update subscription: %v", err)
 	}
 	return nil
 }
@@ -216,7 +216,7 @@ func (r *ManagedFusionOfferingReconciler) reconcileInstallPlan() error {
 				return fmt.Errorf("installPlan not found for CSV %s", ocsOperatorCSV.Name)
 			}
 		}
-		return fmt.Errorf("failed to get Prometheus Operator CSV: %v", err)
+		return fmt.Errorf("failed to get OCS Operator CSV: %v", err)
 	}
 	return nil
 }
