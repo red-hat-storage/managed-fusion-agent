@@ -197,7 +197,6 @@ func pluginReconcile(reconciler *ManagedFusionOfferingReconciler, offering *v1al
 	if err := dfReconcile(reconciler, offering); err != nil {
 		return ctrl.Result{}, err
 	}
-
 	return ctrl.Result{}, nil
 }
 
