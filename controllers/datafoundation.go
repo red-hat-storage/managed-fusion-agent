@@ -11,6 +11,7 @@ import (
 	ocsv1 "github.com/red-hat-storage/ocs-operator/api/v1"
 	corev1 "k8s.io/api/core/v1"
 	netv1 "k8s.io/api/networking/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -34,6 +35,7 @@ type dataFoundationReconciler struct {
 	storageCluster                 *ocsv1.StorageCluster
 	cephIngressNetworkPolicy       *netv1.NetworkPolicy
 	providerAPIServerNetworkPolicy *netv1.NetworkPolicy
+	rookConfigMap                  *corev1.ConfigMap
 }
 
 //+kubebuilder:rbac:groups=ocs.openshift.io,namespace=system,resources=storageclusters,verbs=get;list;watch;create;update;patch;delete
@@ -43,7 +45,8 @@ func dfSetupWatches(controllerBuilder *builder.Builder) {
 	controllerBuilder.
 		Owns(&corev1.Secret{}).
 		Owns(&ocsv1.StorageCluster{}).
-		Owns(&netv1.NetworkPolicy{})
+		Owns(&netv1.NetworkPolicy{}).
+		Owns(&corev1.ConfigMap{})
 }
 
 func DFAddToScheme(scheme *runtime.Scheme) {
@@ -69,6 +72,9 @@ func dfReconcile(offeringReconciler *ManagedFusionOfferingReconciler, offering *
 	if err := r.reconcileProviderAPIServerNetworkPolicy(); err != nil {
 		return err
 	}
+	if err := r.reconcileRookCephOperatorConfig(); err != nil {
+		return err
+	}
 
 	return nil
 }
@@ -87,9 +93,14 @@ func (r *dataFoundationReconciler) initReconciler(offeringReconciler *ManagedFus
 	r.cephIngressNetworkPolicy = &netv1.NetworkPolicy{}
 	r.cephIngressNetworkPolicy.Name = "ceph-ingress-rule"
 	r.cephIngressNetworkPolicy.Namespace = r.Namespace
+
 	r.providerAPIServerNetworkPolicy = &netv1.NetworkPolicy{}
 	r.providerAPIServerNetworkPolicy.Name = "provider-api-server-rule"
 	r.providerAPIServerNetworkPolicy.Namespace = r.Namespace
+
+	r.rookConfigMap = &corev1.ConfigMap{}
+	r.rookConfigMap.Name = "rook-ceph-operator-config"
+	r.rookConfigMap.Namespace = r.Namespace
 }
 
 func (r *dataFoundationReconciler) parseSpec(offering *v1alpha1.ManagedFusionOffering) error {
@@ -214,6 +225,7 @@ func (r *dataFoundationReconciler) setDeviceSetCount(deviceSet *ocsv1.StorageDev
 		deviceSet.Count = currDeviceSetCount
 	}
 }
+
 func (r *dataFoundationReconciler) reconcileCephIngressNetworkPolicy() error {
 	_, err := ctrl.CreateOrUpdate(r.Ctx, r.Client, r.cephIngressNetworkPolicy, func() error {
 		if err := r.own(r.cephIngressNetworkPolicy); err != nil {
@@ -241,5 +253,27 @@ func (r *dataFoundationReconciler) reconcileProviderAPIServerNetworkPolicy() err
 	if err != nil {
 		return fmt.Errorf("Failed to update provider api server NetworkPolicy: %v", err)
 	}
+
+	return nil
+}
+
+func (r *dataFoundationReconciler) reconcileRookCephOperatorConfig() error {
+	if err := r.get(r.rookConfigMap); err != nil {
+		return fmt.Errorf("Failed to get Rook ConfigMap: %v", err)
+	}
+
+	cloneRookConfigMap := r.rookConfigMap.DeepCopy()
+	if cloneRookConfigMap.Data == nil {
+		cloneRookConfigMap.Data = map[string]string{}
+	}
+
+	cloneRookConfigMap.Data["ROOK_CSI_ENABLE_CEPHFS"] = "false"
+	cloneRookConfigMap.Data["ROOK_CSI_ENABLE_RBD"] = "false"
+	if !equality.Semantic.DeepEqual(r.rookConfigMap, cloneRookConfigMap) {
+		if err := r.update(cloneRookConfigMap); err != nil {
+			return fmt.Errorf("Failed to update Rook ConfigMap: %v", err)
+		}
+	}
+
 	return nil
 }

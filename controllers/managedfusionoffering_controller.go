@@ -190,6 +190,10 @@ func (r *ManagedFusionOfferingReconciler) own(resource metav1.Object) error {
 	return ctrl.SetControllerReference(r.managedFusionOffering, resource, r.Scheme)
 }
 
+func (r *ManagedFusionOfferingReconciler) update(obj client.Object) error {
+	return r.Client.Update(r.Ctx, obj)
+}
+
 // All the below functions are placeholder for offering plugin integration
 
 // This function is a placeholder for offering plugin integration
