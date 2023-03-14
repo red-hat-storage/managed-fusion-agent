@@ -213,7 +213,8 @@ func (r *ManagedFusionOfferingReconciler) reconcileInstallPlan() error {
 				}
 			}
 			if !foundInstallPlan {
-				return fmt.Errorf("installPlan not found for CSV %s", ocsOperatorCSV.Name)
+				r.Log.V(-1).Info("installPlan not found for %s CSV", ocsOperatorCSV.Name)
+				return nil
 			}
 		}
 		return fmt.Errorf("failed to get OCS Operator CSV: %v", err)
