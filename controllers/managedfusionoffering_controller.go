@@ -19,14 +19,30 @@ package controllers
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/go-logr/logr"
+	opv1a1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
 	v1alpha1 "github.com/red-hat-storage/managed-fusion-agent/api/v1alpha1"
+	"github.com/red-hat-storage/managed-fusion-agent/utils"
+	"k8s.io/apimachinery/pkg/api/equality"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	controller "sigs.k8s.io/controller-runtime/pkg/controller"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	"sigs.k8s.io/controller-runtime/pkg/source"
+)
+
+const (
+	managedFusionAnnotation = "misf.ibm.com/managedfusionoffering"
+	ocsOperatorName         = "ocs-operator"
+	mcgOperatorName         = "mcg-operator"
 )
 
 // ManagedFusionOfferingReconciler reconciles a ManagedFusionOffering object
@@ -85,13 +101,155 @@ func pluginReconcile(r *ManagedFusionOfferingReconciler) (ctrl.Result, error) {
 	if _, found := r.managedFusionOffering.Spec.Config["onboardingValidationKey"]; !found {
 		return ctrl.Result{}, fmt.Errorf("%s CR does not contain onboardingValidationKey entry", r.managedFusionOffering.Name)
 	}
+	if err := reconcileCSV(r); err != nil {
+		return ctrl.Result{}, err
+	}
 	return ctrl.Result{}, nil
 }
 
+func reconcileCSV(r *ManagedFusionOfferingReconciler) error {
+	r.Log.Info("Reconciling CSVs")
+	csvList := opv1a1.ClusterServiceVersionList{}
+	if err := r.list(&csvList); err != nil {
+		return fmt.Errorf("unable to list csv resources: %v", err)
+	}
+
+	for index := range csvList.Items {
+		csv := &csvList.Items[index]
+		if strings.HasPrefix(csv.Name, ocsOperatorName) {
+			if err := updateOCSCSV(r, csv); err != nil {
+				return fmt.Errorf("Failed to update OCS CSV: %v", err)
+			}
+		} else if strings.HasPrefix(csv.Name, mcgOperatorName) {
+			if err := updateMCGCSV(r, csv); err != nil {
+				return fmt.Errorf("Failed to update MCG CSV: %v", err)
+			}
+		}
+	}
+	return nil
+}
+
+func updateOCSCSV(r *ManagedFusionOfferingReconciler, csv *opv1a1.ClusterServiceVersion) error {
+	isChanged := false
+	if _, found := csv.Annotations[managedFusionAnnotation]; !found {
+		r.addManagedFusionOfferingAnnotation(csv, managedFusionAnnotation)
+		isChanged = true
+	}
+	deployments := csv.Spec.InstallStrategy.StrategySpec.DeploymentSpecs
+	for i := range deployments {
+		containers := deployments[i].Spec.Template.Spec.Containers
+		for j := range containers {
+			switch container := &containers[j]; container.Name {
+			case "ocs-operator":
+				resources := utils.GetResourceRequirements("ocs-operator")
+				if !equality.Semantic.DeepEqual(container.Resources, resources) {
+					container.Resources = resources
+					isChanged = true
+				}
+			case "rook-ceph-operator":
+				resources := utils.GetResourceRequirements("rook-ceph-operator")
+				if !equality.Semantic.DeepEqual(container.Resources, resources) {
+					container.Resources = resources
+					isChanged = true
+				}
+			case "ocs-metrics-exporter":
+				resources := utils.GetResourceRequirements("ocs-metrics-exporter")
+				if !equality.Semantic.DeepEqual(container.Resources, resources) {
+					container.Resources = resources
+					isChanged = true
+				}
+			default:
+				r.Log.V(-1).Info("Could not find resource requirement", "Resource", container.Name)
+			}
+		}
+	}
+	if isChanged {
+		if err := r.update(csv); err != nil {
+			return fmt.Errorf("Failed to update OCS CSV: %v", err)
+		}
+	}
+	return nil
+}
+
+func updateMCGCSV(r *ManagedFusionOfferingReconciler, csv *opv1a1.ClusterServiceVersion) error {
+	isChanged := false
+	if _, found := csv.Annotations[managedFusionAnnotation]; !found {
+		r.addManagedFusionOfferingAnnotation(csv, managedFusionAnnotation)
+		isChanged = true
+	}
+	mcgDeployments := csv.Spec.InstallStrategy.StrategySpec.DeploymentSpecs
+	for i := range mcgDeployments {
+		deployment := &mcgDeployments[i]
+		// Disable noobaa operator by scaling down the replica of noobaa deploymnet
+		// in MCG Operator CSV.
+		if deployment.Name == "noobaa-operator" &&
+			(deployment.Spec.Replicas == nil || *deployment.Spec.Replicas > 0) {
+			zero := int32(0)
+			deployment.Spec.Replicas = &zero
+			isChanged = true
+		}
+	}
+	if isChanged {
+		if err := r.update(csv); err != nil {
+			return fmt.Errorf("Failed to update MCG CSV: %v", err)
+		}
+	}
+	return nil
+}
+
 // This function is a placeholder for offering plugin integration
-func pluginSetupWatches(controllerBuilder *builder.Builder) {}
+func pluginSetupWatches(controllerBuilder *builder.Builder) {
+	csvPredicates := builder.WithPredicates(
+		predicate.NewPredicateFuncs(
+			func(client client.Object) bool {
+				return strings.HasPrefix(client.GetName(), ocsOperatorName) ||
+					strings.HasPrefix(client.GetName(), mcgOperatorName)
+			},
+		),
+	)
+	enqueueManagedFusionOfferingRequest := handler.EnqueueRequestsFromMapFunc(
+		func(object client.Object) []reconcile.Request {
+			annotations := object.GetAnnotations()
+			if annotation, found := annotations[managedFusionAnnotation]; found {
+				namespacedName := strings.Split(annotation, "/")
+				return []reconcile.Request{{
+					NamespacedName: types.NamespacedName{
+						Namespace: namespacedName[0],
+						Name:      namespacedName[1],
+					},
+				}}
+			}
+			return []reconcile.Request{}
+		},
+	)
+	controllerBuilder.
+		Watches(
+			&source.Kind{Type: &opv1a1.ClusterServiceVersion{}},
+			enqueueManagedFusionOfferingRequest,
+			csvPredicates,
+		)
+}
+
+func (r *ManagedFusionOfferingReconciler) addManagedFusionOfferingAnnotation(obj metav1.Object, key string) {
+	annotations := obj.GetAnnotations()
+	if annotations == nil {
+		annotations = map[string]string{}
+		obj.SetAnnotations(annotations)
+	}
+	value := fmt.Sprintf("%s/%s", r.managedFusionOffering.Namespace, r.managedFusionOffering.Name)
+	annotations[key] = value
+}
+
+func (r *ManagedFusionOfferingReconciler) list(obj client.ObjectList) error {
+	listOptions := client.InNamespace(r.managedFusionOffering.Namespace)
+	return r.Client.List(r.ctx, obj, listOptions)
+}
 
 func (r *ManagedFusionOfferingReconciler) get(obj client.Object) error {
 	key := client.ObjectKeyFromObject(obj)
 	return r.Client.Get(r.ctx, key, obj)
+}
+
+func (r *ManagedFusionOfferingReconciler) update(obj client.Object) error {
+	return r.Client.Update(r.ctx, obj)
 }
