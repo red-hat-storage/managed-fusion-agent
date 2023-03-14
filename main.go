@@ -20,6 +20,7 @@ import (
 	"flag"
 	"os"
 
+	opv1 "github.com/operator-framework/api/pkg/operators/v1"
 	"go.uber.org/zap/zapcore"
 	v1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -149,4 +150,7 @@ func getUnrestrictedClient() client.Client {
 }
 
 // This function is a placeholder for offering plugin integration
-func pluginAddToScheme(scheme *runtime.Scheme) {}
+func pluginAddToScheme(scheme *runtime.Scheme) {
+
+	utilruntime.Must(opv1.AddToScheme(scheme))
+}
