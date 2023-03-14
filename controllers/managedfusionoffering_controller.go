@@ -156,7 +156,7 @@ func (r *ManagedFusionOfferingReconciler) reconcileCatalogSource() error {
 		}
 		desired := templates.OCSCatalogSource.DeepCopy()
 		// A hook will be required to get catalog for a specific offering
-		desired.Spec.Image = "registry.redhat.io/redhat/redhat-operator-index:v4.11"
+		desired.Spec.Image = "registry.redhat.io/redhat/redhat-operator-index:v4.12"
 		r.ocsCatalogSource.Spec = desired.Spec
 		return nil
 	})
@@ -176,8 +176,8 @@ func (r *ManagedFusionOfferingReconciler) reconcileSubscription() error {
 		desired.Spec.CatalogSource = r.ocsCatalogSource.Name
 		desired.Spec.CatalogSourceNamespace = r.ocsCatalogSource.Namespace
 		// A hook will be required to get channel and startingCSV for a specific offering
-		desired.Spec.Channel = "stable-4.11"
-		desired.Spec.StartingCSV = "ocs-operator.v4.11.2"
+		desired.Spec.Channel = "stable-4.12"
+		desired.Spec.StartingCSV = "ocs-operator.v4.12.0"
 		r.ocsSubscription.Spec = desired.Spec
 		return nil
 
