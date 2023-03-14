@@ -22,6 +22,8 @@ import (
 
 	"github.com/go-logr/logr"
 	v1alpha1 "github.com/red-hat-storage/managed-fusion-agent/api/v1alpha1"
+	"github.com/red-hat-storage/managed-fusion-agent/templates"
+	netv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
@@ -79,13 +81,36 @@ func (r *ManagedFusionOfferingReconciler) initReconciler(ctx context.Context, re
 
 // This function is a placeholder for offering plugin integration
 func pluginReconcile(r *ManagedFusionOfferingReconciler) (ctrl.Result, error) {
+	if err := r.reconcileCephIngressNetworkPolicy(); err != nil {
+		return ctrl.Result{}, err
+	}
 	return ctrl.Result{}, nil
 }
 
 // This function is a placeholder for offering plugin integration
-func pluginSetupWatches(controllerBuilder *builder.Builder) {}
+func pluginSetupWatches(controllerBuilder *builder.Builder) {
+	controllerBuilder.Owns(&netv1.NetworkPolicy{})
+}
 
 func (r *ManagedFusionOfferingReconciler) get(obj client.Object) error {
 	key := client.ObjectKeyFromObject(obj)
 	return r.Client.Get(r.ctx, key, obj)
+}
+
+func (r *ManagedFusionOfferingReconciler) reconcileCephIngressNetworkPolicy() error {
+	cephIngressNetworkPolicy := &netv1.NetworkPolicy{}
+	cephIngressNetworkPolicy.Name = "ceph-ingress-rule"
+	cephIngressNetworkPolicy.Namespace = r.managedFusionOffering.Namespace
+	_, err := ctrl.CreateOrUpdate(r.ctx, r.Client, cephIngressNetworkPolicy, func() error {
+		if err := r.own(cephIngressNetworkPolicy); err != nil {
+			return err
+		}
+		desired := templates.CephNetworkPolicyTemplate.DeepCopy()
+		cephIngressNetworkPolicy.Spec = desired.Spec
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("Failed to update ceph ingress NetworkPolicy: %v", err)
+	}
+	return nil
 }
