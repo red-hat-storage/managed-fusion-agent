@@ -19,7 +19,6 @@ package controllers
 import (
 	"context"
 	"fmt"
-	"strconv"
 
 	"github.com/go-logr/logr"
 	opv1 "github.com/operator-framework/api/pkg/operators/v1"
@@ -46,8 +45,8 @@ type ManagedFusionOfferingReconciler struct {
 	Log    logr.Logger
 	Scheme *runtime.Scheme
 
-	ctx                   context.Context
-	namespace             string
+	Ctx                   context.Context
+	Namespace             string
 	managedFusionOffering *v1alpha1.ManagedFusionOffering
 	operatorGroup         *opv1.OperatorGroup
 	catalogSource         *opv1a1.CatalogSource
@@ -85,7 +84,7 @@ func (r *ManagedFusionOfferingReconciler) Reconcile(ctx context.Context, req ctr
 		return result, fmt.Errorf("an error was encountered during reconcilePhases: %v", err)
 	}
 
-	if result, err := pluginReconcile(r); err != nil {
+	if result, err := pluginReconcile(r, r.managedFusionOffering); err != nil {
 		return ctrl.Result{}, fmt.Errorf("An error was encountered during reconcile: %v", err)
 	} else {
 		return result, nil
@@ -93,8 +92,8 @@ func (r *ManagedFusionOfferingReconciler) Reconcile(ctx context.Context, req ctr
 }
 
 func (r *ManagedFusionOfferingReconciler) initReconciler(ctx context.Context, req ctrl.Request) {
-	r.ctx = ctx
-	r.namespace = req.Namespace
+	r.Ctx = ctx
+	r.Namespace = req.Namespace
 
 	r.managedFusionOffering = &v1alpha1.ManagedFusionOffering{}
 	r.managedFusionOffering.Name = req.Name
@@ -130,7 +129,7 @@ func (r *ManagedFusionOfferingReconciler) reconcilePhases() (reconcile.Result, e
 func (r *ManagedFusionOfferingReconciler) reconcileOperatorGroup() error {
 	r.Log.Info(fmt.Sprintf("Reconciling operator group for %s offering deployment", r.managedFusionOffering.Spec.Kind))
 
-	_, err := ctrl.CreateOrUpdate(r.ctx, r.Client, r.operatorGroup, func() error {
+	_, err := ctrl.CreateOrUpdate(r.Ctx, r.Client, r.operatorGroup, func() error {
 		if err := r.own(r.operatorGroup); err != nil {
 			return err
 		}
@@ -146,7 +145,7 @@ func (r *ManagedFusionOfferingReconciler) reconcileOperatorGroup() error {
 func (r *ManagedFusionOfferingReconciler) reconcileCatalogSource() error {
 	r.Log.Info(fmt.Sprintf("Reconciling catalog source for %s offering deployment", r.managedFusionOffering.Spec.Kind))
 
-	_, err := ctrl.CreateOrUpdate(r.ctx, r.Client, r.catalogSource, func() error {
+	_, err := ctrl.CreateOrUpdate(r.Ctx, r.Client, r.catalogSource, func() error {
 		if err := r.own(r.catalogSource); err != nil {
 			return err
 		}
@@ -164,7 +163,7 @@ func (r *ManagedFusionOfferingReconciler) reconcileCatalogSource() error {
 func (r *ManagedFusionOfferingReconciler) reconcileSubscription() error {
 	r.Log.Info(fmt.Sprintf("Reconciling subscription for %s offering deployment", r.managedFusionOffering.Spec.Kind))
 
-	_, err := ctrl.CreateOrUpdate(r.ctx, r.Client, r.subscription, func() error {
+	_, err := ctrl.CreateOrUpdate(r.Ctx, r.Client, r.subscription, func() error {
 		if err := r.own(r.subscription); err != nil {
 			return err
 		}
@@ -183,7 +182,7 @@ func (r *ManagedFusionOfferingReconciler) reconcileSubscription() error {
 
 func (r *ManagedFusionOfferingReconciler) get(obj client.Object) error {
 	key := client.ObjectKeyFromObject(obj)
-	return r.Client.Get(r.ctx, key, obj)
+	return r.Client.Get(r.Ctx, key, obj)
 }
 
 func (r *ManagedFusionOfferingReconciler) own(resource metav1.Object) error {
@@ -193,69 +192,24 @@ func (r *ManagedFusionOfferingReconciler) own(resource metav1.Object) error {
 
 // All the below functions are placeholder for offering plugin integration
 
-type dataFoundationSpec struct {
-	usableCapacityInTiB     int
-	onboardingValidationKey string
-}
-
 // This function is a placeholder for offering plugin integration
-func pluginReconcile(r *ManagedFusionOfferingReconciler) (ctrl.Result, error) {
-	if _, err := parseDataFoundationSpec(r); err != nil {
+func pluginReconcile(reconciler *ManagedFusionOfferingReconciler, offering *v1alpha1.ManagedFusionOffering) (ctrl.Result, error) {
+	if err := dfReconcile(reconciler, offering); err != nil {
 		return ctrl.Result{}, err
 	}
 
 	return ctrl.Result{}, nil
 }
 
-func parseDataFoundationSpec(r *ManagedFusionOfferingReconciler) (dataFoundationSpec, error) {
-	r.Log.Info("Parsing ManagedFusionOffering Data Foundation spec")
-
-	valid := true
-	var usableCapacityInTiB int
-	var err error
-	if usableCapacityInTiBAsString, found := r.managedFusionOffering.Spec.Config["usableCapacityInTiB"]; !found {
-		r.Log.Error(
-			fmt.Errorf("missing field: usableCapacityInTiB"),
-			"an error occurred while parsing ManagedFusionOffering Data Foundation spec",
-		)
-		valid = false
-	} else if usableCapacityInTiB, err = strconv.Atoi(usableCapacityInTiBAsString); err != nil {
-		r.Log.Error(
-			fmt.Errorf("error parsing usableCapacityInTib: %v", err),
-			"an error occurred while parsing ManagedFusionOffering Data Foundation spec",
-		)
-		valid = false
-	}
-
-	var onboardingValidationKeyAsString string
-	var found bool
-	if onboardingValidationKeyAsString, found = r.managedFusionOffering.Spec.Config["onboardingValidationKey"]; !found {
-		r.Log.Error(
-			fmt.Errorf("missing field: onboardingValidationKey"),
-			"an error occurred while parsing ManagedFusionOffering Data Foundation spec",
-		)
-		valid = false
-	}
-
-	if !valid {
-		r.Log.Info("parsing ManagedFusionOffering Data Foundation spec failed")
-		return dataFoundationSpec{}, fmt.Errorf("invalid ManagedFusionOffering Data Foundation spec")
-	}
-	r.Log.Info("parsing ManagedFusionOffering Data Foundation spec completed successfuly")
-
-	return dataFoundationSpec{
-		usableCapacityInTiB:     usableCapacityInTiB,
-		onboardingValidationKey: onboardingValidationKeyAsString,
-	}, nil
-}
-
 // This function is a placeholder for offering plugin integration
-func pluginSetupWatches(controllerBuilder *builder.Builder) {}
+func pluginSetupWatches(controllerBuilder *builder.Builder) {
+	dfSetupWatches(controllerBuilder)
+}
 
 // This function is a placeholder for offering plugin integration
 func pluginGetDesiredOperatorGroupSpec(r *ManagedFusionOfferingReconciler) opv1.OperatorGroupSpec {
 	return opv1.OperatorGroupSpec{
-		TargetNamespaces: []string{r.namespace},
+		TargetNamespaces: []string{r.Namespace},
 	}
 }
 
