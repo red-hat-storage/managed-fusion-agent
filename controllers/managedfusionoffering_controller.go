@@ -122,3 +122,7 @@ func (r *ManagedFusionOfferingReconciler) reconcileRookCephOperatorConfig() erro
 
 	return nil
 }
+
+func (r *ManagedFusionOfferingReconciler) update(obj client.Object) error {
+	return r.Client.Update(r.ctx, obj)
+}
