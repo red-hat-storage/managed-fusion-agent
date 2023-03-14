@@ -22,6 +22,9 @@ import (
 
 	"github.com/go-logr/logr"
 	v1alpha1 "github.com/red-hat-storage/managed-fusion-agent/api/v1alpha1"
+	"github.com/red-hat-storage/managed-fusion-agent/templates"
+	netv1 "k8s.io/api/networking/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
@@ -79,13 +82,44 @@ func (r *ManagedFusionOfferingReconciler) initReconciler(ctx context.Context, re
 
 // This function is a placeholder for offering plugin integration
 func pluginReconcile(r *ManagedFusionOfferingReconciler) (ctrl.Result, error) {
+	if err := r.reconcileProviderAPIServerNetworkPolicy(); err != nil {
+		return ctrl.Result{}, err
+	}
 	return ctrl.Result{}, nil
 }
 
 // This function is a placeholder for offering plugin integration
-func pluginSetupWatches(controllerBuilder *builder.Builder) {}
+func pluginSetupWatches(controllerBuilder *builder.Builder) {
+	controllerBuilder.Owns(&netv1.NetworkPolicy{})
+}
 
 func (r *ManagedFusionOfferingReconciler) get(obj client.Object) error {
 	key := client.ObjectKeyFromObject(obj)
 	return r.Client.Get(r.ctx, key, obj)
+}
+
+func (r *ManagedFusionOfferingReconciler) reconcileProviderAPIServerNetworkPolicy() error {
+	providerAPIServerNetworkPolicy := &netv1.NetworkPolicy{}
+	providerAPIServerNetworkPolicy.Name = "provider-api-server-rule"
+	providerAPIServerNetworkPolicy.Namespace = r.managedFusionOffering.Namespace
+	_, err := ctrl.CreateOrUpdate(r.ctx, r.Client, providerAPIServerNetworkPolicy, func() error {
+		if err := r.own(providerAPIServerNetworkPolicy); err != nil {
+			return err
+		}
+		desired := templates.ProviderApiServerNetworkPolicyTemplate.DeepCopy()
+		providerAPIServerNetworkPolicy.Spec = desired.Spec
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("Failed to update provider api server NetworkPolicy: %v", err)
+	}
+	return nil
+}
+
+func (r *ManagedFusionOfferingReconciler) own(resource metav1.Object) error {
+	// Ensure managedFusion ownership on a resource
+	if err := ctrl.SetControllerReference(r.managedFusionOffering, resource, r.Scheme); err != nil {
+		return err
+	}
+	return nil
 }
