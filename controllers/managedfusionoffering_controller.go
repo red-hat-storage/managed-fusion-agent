@@ -79,6 +79,12 @@ func (r *ManagedFusionOfferingReconciler) initReconciler(ctx context.Context, re
 
 // This function is a placeholder for offering plugin integration
 func pluginReconcile(r *ManagedFusionOfferingReconciler) (ctrl.Result, error) {
+	if _, found := r.managedFusionOffering.Spec.Config["usableCapacityInTiB"]; !found {
+		return ctrl.Result{}, fmt.Errorf("%s CR does not contain usableCapacityInTiB entry", r.managedFusionOffering.Name)
+	}
+	if _, found := r.managedFusionOffering.Spec.Config["onboardingValidationKey"]; !found {
+		return ctrl.Result{}, fmt.Errorf("%s CR does not contain onboardingValidationKey entry", r.managedFusionOffering.Name)
+	}
 	return ctrl.Result{}, nil
 }
 
