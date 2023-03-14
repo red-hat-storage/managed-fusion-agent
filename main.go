@@ -39,6 +39,7 @@ import (
 	promv1a1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1alpha1"
 	misfv1a1 "github.com/red-hat-storage/managed-fusion-agent/api/v1alpha1"
 	"github.com/red-hat-storage/managed-fusion-agent/controllers"
+	ocsv1 "github.com/red-hat-storage/ocs-operator/api/v1"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -149,4 +150,8 @@ func getUnrestrictedClient() client.Client {
 }
 
 // This function is a placeholder for offering plugin integration
-func pluginAddToScheme(scheme *runtime.Scheme) {}
+func pluginAddToScheme(scheme *runtime.Scheme) {
+
+	utilruntime.Must(ocsv1.AddToScheme(scheme))
+
+}
