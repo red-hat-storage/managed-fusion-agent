@@ -24,6 +24,7 @@ import (
 	v1alpha1 "github.com/red-hat-storage/managed-fusion-agent/api/v1alpha1"
 	"github.com/red-hat-storage/managed-fusion-agent/templates"
 	netv1 "k8s.io/api/networking/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
@@ -111,6 +112,14 @@ func (r *ManagedFusionOfferingReconciler) reconcileCephIngressNetworkPolicy() er
 	})
 	if err != nil {
 		return fmt.Errorf("Failed to update ceph ingress NetworkPolicy: %v", err)
+	}
+	return nil
+}
+
+func (r *ManagedFusionOfferingReconciler) own(resource metav1.Object) error {
+	// Ensure managedFusion ownership on a resource
+	if err := ctrl.SetControllerReference(r.managedFusionOffering, resource, r.Scheme); err != nil {
+		return err
 	}
 	return nil
 }
