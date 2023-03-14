@@ -10,6 +10,7 @@ import (
 	"github.com/red-hat-storage/managed-fusion-agent/datafoundation"
 	ocsv1 "github.com/red-hat-storage/ocs-operator/api/v1"
 	corev1 "k8s.io/api/core/v1"
+	netv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -31,14 +32,17 @@ type dataFoundationReconciler struct {
 	spec                          dataFoundationSpec
 	onboardingValidationKeySecret *corev1.Secret
 	storageCluster                *ocsv1.StorageCluster
+	cephIngressNetworkPolicy      *netv1.NetworkPolicy
 }
 
 //+kubebuilder:rbac:groups=ocs.openshift.io,namespace=system,resources=storageclusters,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=network.openshift.io,resources=ingressnetworkpolicies,verbs=create;get;list;watch;update
 
 func dfSetupWatches(controllerBuilder *builder.Builder) {
 	controllerBuilder.
 		Owns(&corev1.Secret{}).
-		Owns(&ocsv1.StorageCluster{})
+		Owns(&ocsv1.StorageCluster{}).
+		Owns(&netv1.NetworkPolicy{})
 }
 
 func DFAddToScheme(scheme *runtime.Scheme) {
@@ -58,6 +62,9 @@ func dfReconcile(offeringReconciler *ManagedFusionOfferingReconciler, offering *
 	if err := r.reconcileStorageCluster(); err != nil {
 		return err
 	}
+	if err := r.reconcileCephIngressNetworkPolicy(); err != nil {
+		return err
+	}
 
 	return nil
 }
@@ -72,6 +79,10 @@ func (r *dataFoundationReconciler) initReconciler(offeringReconciler *ManagedFus
 	r.storageCluster = &ocsv1.StorageCluster{}
 	r.storageCluster.Name = "ocs-storagecluster"
 	r.storageCluster.Namespace = r.Namespace
+
+	r.cephIngressNetworkPolicy = &netv1.NetworkPolicy{}
+	r.cephIngressNetworkPolicy.Name = "ceph-ingress-rule"
+	r.cephIngressNetworkPolicy.Namespace = r.Namespace
 }
 
 func (r *dataFoundationReconciler) parseSpec(offering *v1alpha1.ManagedFusionOffering) error {
@@ -194,4 +205,18 @@ func (r *dataFoundationReconciler) setDeviceSetCount(deviceSet *ocsv1.StorageDev
 		r.Log.V(-1).Info("Requested storage device set count will result in downscaling, which is not supported. Skipping")
 		deviceSet.Count = currDeviceSetCount
 	}
+}
+func (r *dataFoundationReconciler) reconcileCephIngressNetworkPolicy() error {
+	_, err := ctrl.CreateOrUpdate(r.Ctx, r.Client, r.cephIngressNetworkPolicy, func() error {
+		if err := r.own(r.cephIngressNetworkPolicy); err != nil {
+			return err
+		}
+		desired := datafoundation.CephNetworkPolicyTemplate.DeepCopy()
+		r.cephIngressNetworkPolicy.Spec = desired.Spec
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("Failed to update ceph ingress NetworkPolicy: %v", err)
+	}
+	return nil
 }
