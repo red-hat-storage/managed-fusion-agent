@@ -19,9 +19,12 @@ package controllers
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/go-logr/logr"
 	v1alpha1 "github.com/red-hat-storage/managed-fusion-agent/api/v1alpha1"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
@@ -85,11 +88,49 @@ func pluginReconcile(r *ManagedFusionOfferingReconciler) (ctrl.Result, error) {
 	if _, found := r.managedFusionOffering.Spec.Config["onboardingValidationKey"]; !found {
 		return ctrl.Result{}, fmt.Errorf("%s CR does not contain onboardingValidationKey entry", r.managedFusionOffering.Name)
 	}
+	if err := reconcileOnboardingValidationSecret(r); err != nil {
+		return ctrl.Result{}, err
+	}
 	return ctrl.Result{}, nil
 }
 
+func reconcileOnboardingValidationSecret(r *ManagedFusionOfferingReconciler) error {
+	r.Log.Info("Reconciling onboardingValidationKeySecret")
+	onboardingValidationKeySecret := &corev1.Secret{}
+	onboardingValidationKeySecret.Name = "onboarding-ticket-key"
+	onboardingValidationKeySecret.Namespace = r.managedFusionOffering.Namespace
+	_, err := ctrl.CreateOrUpdate(r.ctx, r.Client, onboardingValidationKeySecret, func() error {
+		if err := r.own(onboardingValidationKeySecret); err != nil {
+			return err
+		}
+		onboardingValidationData := fmt.Sprintf(
+			"-----BEGIN PUBLIC KEY-----\n%s\n-----END PUBLIC KEY-----",
+			strings.TrimSpace(r.managedFusionOffering.Spec.Config["onboardingValidationKey"]),
+		)
+		onboardingValidationKeySecret.Data = map[string][]byte{
+			"key": []byte(onboardingValidationData),
+		}
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("Failed to update onboardingValidationKeySecret: %v", err)
+	}
+	return nil
+}
+
 // This function is a placeholder for offering plugin integration
-func pluginSetupWatches(controllerBuilder *builder.Builder) {}
+func pluginSetupWatches(controllerBuilder *builder.Builder) {
+	controllerBuilder.
+		Owns(&corev1.Secret{})
+}
+
+func (r *ManagedFusionOfferingReconciler) own(resource metav1.Object) error {
+	// Ensure managedFusionOffering ownership on a resource
+	if err := ctrl.SetControllerReference(r.managedFusionOffering, resource, r.Scheme); err != nil {
+		return err
+	}
+	return nil
+}
 
 func (r *ManagedFusionOfferingReconciler) get(obj client.Object) error {
 	key := client.ObjectKeyFromObject(obj)
