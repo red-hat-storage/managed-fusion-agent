@@ -22,6 +22,8 @@ import (
 
 	"github.com/go-logr/logr"
 	v1alpha1 "github.com/red-hat-storage/managed-fusion-agent/api/v1alpha1"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
@@ -79,13 +81,48 @@ func (r *ManagedFusionOfferingReconciler) initReconciler(ctx context.Context, re
 
 // This function is a placeholder for offering plugin integration
 func pluginReconcile(r *ManagedFusionOfferingReconciler) (ctrl.Result, error) {
+	if err := r.reconcileRookCephOperatorConfig(); err != nil {
+		return ctrl.Result{}, err
+	}
 	return ctrl.Result{}, nil
 }
 
 // This function is a placeholder for offering plugin integration
-func pluginSetupWatches(controllerBuilder *builder.Builder) {}
+func pluginSetupWatches(controllerBuilder *builder.Builder) {
+	controllerBuilder.Owns(&corev1.ConfigMap{})
+}
 
 func (r *ManagedFusionOfferingReconciler) get(obj client.Object) error {
 	key := client.ObjectKeyFromObject(obj)
 	return r.Client.Get(r.ctx, key, obj)
+}
+
+func (r *ManagedFusionOfferingReconciler) reconcileRookCephOperatorConfig() error {
+	rookConfigMap := &corev1.ConfigMap{}
+	rookConfigMap.Name = "rook-ceph-operator-config"
+	rookConfigMap.Namespace = r.managedFusionOffering.Namespace
+
+	if err := r.get(rookConfigMap); err != nil {
+		// Because resource limits will not be set, failure to get the Rook ConfigMap results in failure to reconcile.
+		return fmt.Errorf("Failed to get Rook ConfigMap: %v", err)
+	}
+
+	cloneRookConfigMap := rookConfigMap.DeepCopy()
+	if cloneRookConfigMap.Data == nil {
+		cloneRookConfigMap.Data = map[string]string{}
+	}
+
+	cloneRookConfigMap.Data["ROOK_CSI_ENABLE_CEPHFS"] = "false"
+	cloneRookConfigMap.Data["ROOK_CSI_ENABLE_RBD"] = "false"
+	if !equality.Semantic.DeepEqual(rookConfigMap, cloneRookConfigMap) {
+		if err := r.update(cloneRookConfigMap); err != nil {
+			return fmt.Errorf("Failed to update Rook ConfigMap: %v", err)
+		}
+	}
+
+	return nil
+}
+
+func (r *ManagedFusionOfferingReconciler) update(obj client.Object) error {
+	return r.Client.Update(r.ctx, obj)
 }
