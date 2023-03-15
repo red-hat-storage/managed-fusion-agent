@@ -33,7 +33,5 @@ var OCSCatalogSource = opv1a1.CatalogSource{
 				},
 			},
 		},
-		DisplayName: "managed-fusion-ocs",
-		Publisher:   "IBM",
 	},
 }
