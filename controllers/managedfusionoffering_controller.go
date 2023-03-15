@@ -172,7 +172,6 @@ func (r *ManagedFusionOfferingReconciler) reconcileCatalogSource() error {
 			return err
 		}
 		desired := templates.OCSCatalogSource.DeepCopy()
-		// A hook will be required to get catalog for a specific offering
 		desired.Spec.DisplayName = r.installConfig.displayName
 		desired.Spec.Publisher = r.installConfig.publisher
 		desired.Spec.Image = r.installConfig.indexImage
@@ -194,7 +193,6 @@ func (r *ManagedFusionOfferingReconciler) reconcileSubscription() error {
 		desired := templates.OCSSubscription.DeepCopy()
 		desired.Spec.CatalogSource = r.catalogSource.Name
 		desired.Spec.CatalogSourceNamespace = r.catalogSource.Namespace
-		// A hook will be required to get channel and startingCSV for a specific offering
 		desired.Spec.Channel = r.installConfig.channel
 		desired.Spec.StartingCSV = r.installConfig.startingCSV
 		desired.Spec.Package = r.installConfig.packageName
