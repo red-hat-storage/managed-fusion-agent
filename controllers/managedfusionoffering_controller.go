@@ -59,11 +59,11 @@ func (r *ManagedFusionOfferingReconciler) Reconcile(ctx context.Context, req ctr
 	r.initReconciler(ctx, req)
 
 	if err := r.get(r.managedFusionOffering); err != nil {
-		return ctrl.Result{}, fmt.Errorf("Unable to get managedFusionOffering: %v", err)
+		return ctrl.Result{}, fmt.Errorf("unable to get managedFusionOffering: %v", err)
 	}
 
 	if result, err := pluginReconcile(r); err != nil {
-		return ctrl.Result{}, fmt.Errorf("An error was encountered during reconcile: %v", err)
+		return ctrl.Result{}, fmt.Errorf("an error was encountered during reconcile: %v", err)
 	} else {
 		return result, nil
 	}

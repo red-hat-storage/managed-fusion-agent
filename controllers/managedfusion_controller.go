@@ -347,7 +347,7 @@ func (r *ManagedFusionReconciler) reconcilePrometheus() error {
 		// for prometheus kube-rbac-proxy sidecar
 		agentCSV, err := r.getCSVByPrefix(agentCSVPrefix)
 		if err != nil {
-			return fmt.Errorf("Unable to set image for kube-rbac-proxy container: %v", err)
+			return fmt.Errorf("unable to set image for kube-rbac-proxy container: %v", err)
 		}
 
 		agentCSVDeployments := agentCSV.Spec.InstallStrategy.StrategySpec.DeploymentSpecs
@@ -395,7 +395,7 @@ func (r *ManagedFusionReconciler) reconcilePrometheus() error {
 		return nil
 	})
 	if err != nil {
-		return fmt.Errorf("Failed to update Prometheus: %v", err)
+		return fmt.Errorf("failed to update Prometheus: %v", err)
 	}
 
 	return nil
@@ -432,10 +432,10 @@ func (r *ManagedFusionReconciler) reconcileAlertmanagerSecret() error {
 			return err
 		}
 		if r.pagerDutyConfigData.ServiceKey == "" {
-			return fmt.Errorf("Agent PagerDuty configuration does not contain serviceKey entry")
+			return fmt.Errorf("agent PagerDuty configuration does not contain serviceKey entry")
 		}
 		if r.smtpConfigData.Password == "" {
-			return fmt.Errorf("Agent SMTP configuration does not contain password entry")
+			return fmt.Errorf("agent SMTP configuration does not contain password entry")
 		}
 		r.alertmanagerSecret.Data = map[string][]byte{
 			amSecretPagerDutyServiceKeyKey: []byte(r.pagerDutyConfigData.ServiceKey),
@@ -456,16 +456,16 @@ func (r *ManagedFusionReconciler) reconcileAlertmanagerConfig() error {
 		}
 
 		if r.pagerDutyConfigData.SOPEndpoint == "" {
-			return fmt.Errorf("Agent PagerDuty configuration does not contain sopEndpoint entry")
+			return fmt.Errorf("agent PagerDuty configuration does not contain sopEndpoint entry")
 		}
 		if r.smtpConfigData.Username == "" {
-			return fmt.Errorf("Agent SMTP configuration does not contain username entry")
+			return fmt.Errorf("agent SMTP configuration does not contain username entry")
 		}
 		if r.smtpConfigData.Endpoint == "" {
-			return fmt.Errorf("Agent SMTP configuration does not contain endpoint entry")
+			return fmt.Errorf("agent SMTP configuration does not contain endpoint entry")
 		}
 		if r.smtpConfigData.FromAddress == "" {
-			return fmt.Errorf("Agent SMTP configuration does not contain fromAddress entry")
+			return fmt.Errorf("agent SMTP configuration does not contain fromAddress entry")
 		}
 		alertingAddressList := []string{}
 		alertingAddressList = append(alertingAddressList,
@@ -534,7 +534,7 @@ func (r *ManagedFusionReconciler) reconcileAlertRelabelConfigSecret() error {
 
 		config, err := yaml.Marshal(alertRelabelConfig)
 		if err != nil {
-			return fmt.Errorf("Unable to encode alert relabel conifg: %v", err)
+			return fmt.Errorf("unable to encode alert relabel conifg: %v", err)
 		}
 
 		r.alertRelabelConfigSecret.Data = map[string][]byte{
@@ -545,7 +545,7 @@ func (r *ManagedFusionReconciler) reconcileAlertRelabelConfigSecret() error {
 	})
 
 	if err != nil {
-		return fmt.Errorf("Unable to create/update AlertRelabelConfigSecret: %v", err)
+		return fmt.Errorf("unable to create/update AlertRelabelConfigSecret: %v", err)
 	}
 
 	return nil
@@ -622,7 +622,7 @@ func (r *ManagedFusionReconciler) reconcileK8SMetricsServiceMonitor() error {
 		return nil
 	})
 	if err != nil {
-		return fmt.Errorf("Failed to update k8sMetricsServiceMonitor: %v", err)
+		return fmt.Errorf("failed to update k8sMetricsServiceMonitor: %v", err)
 	}
 	return nil
 }
@@ -636,7 +636,7 @@ func (r *ManagedFusionReconciler) reconcileMonitoringResources() error {
 
 	podMonitorList := promv1.PodMonitorList{}
 	if err := r.list(&podMonitorList); err != nil {
-		return fmt.Errorf("Could not list pod monitors: %v", err)
+		return fmt.Errorf("could not list pod monitors: %v", err)
 	}
 	for i := range podMonitorList.Items {
 		obj := podMonitorList.Items[i]
@@ -648,7 +648,7 @@ func (r *ManagedFusionReconciler) reconcileMonitoringResources() error {
 
 	serviceMonitorList := promv1.ServiceMonitorList{}
 	if err := r.list(&serviceMonitorList); err != nil {
-		return fmt.Errorf("Could not list service monitors: %v", err)
+		return fmt.Errorf("could not list service monitors: %v", err)
 	}
 	for i := range serviceMonitorList.Items {
 		obj := serviceMonitorList.Items[i]
@@ -660,7 +660,7 @@ func (r *ManagedFusionReconciler) reconcileMonitoringResources() error {
 
 	promRuleList := promv1.PrometheusRuleList{}
 	if err := r.list(&promRuleList); err != nil {
-		return fmt.Errorf("Could not list prometheus rules: %v", err)
+		return fmt.Errorf("could not list prometheus rules: %v", err)
 	}
 	for i := range promRuleList.Items {
 		obj := promRuleList.Items[i]
@@ -684,7 +684,7 @@ func (r *ManagedFusionReconciler) reconcilePrometheusProxyNetworkPolicy() error 
 		return nil
 	})
 	if err != nil {
-		return fmt.Errorf("Failed to update prometheus proxy NetworkPolicy: %v", err)
+		return fmt.Errorf("failed to update prometheus proxy NetworkPolicy: %v", err)
 	}
 	return nil
 }
@@ -742,5 +742,8 @@ func (r *ManagedFusionReconciler) getCSVByPrefix(name string) (*opv1a1.ClusterSe
 			return candidate, nil
 		}
 	}
-	return nil, errors.NewNotFound(opv1a1.Resource("csv"), fmt.Sprintf("unable to find a csv prefixed with %s", name))
+	return nil, errors.NewNotFound(
+		opv1a1.Resource("csv"),
+		fmt.Sprintf("unable to find a csv prefixed with %s", name),
+	)
 }
