@@ -19,12 +19,12 @@ package controllers
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/go-logr/logr"
 	opv1 "github.com/operator-framework/api/pkg/operators/v1"
 	opv1a1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
 	v1alpha1 "github.com/red-hat-storage/managed-fusion-agent/api/v1alpha1"
-	"github.com/red-hat-storage/managed-fusion-agent/templates"
 	"github.com/red-hat-storage/managed-fusion-agent/utils"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -38,18 +38,8 @@ import (
 
 const (
 	operatorGroupName = "managed-fusion-og"
-	catalogSourceName = "managed-fusion-catsrc"
 	subscriptionName  = "managed-fusion-sub"
 )
-
-type installationConfig struct {
-	displayName string
-	publisher   string
-	indexImage  string
-	channel     string
-	startingCSV string
-	packageName string
-}
 
 // ManagedFusionOfferingReconciler reconciles a ManagedFusionOffering object
 type ManagedFusionOfferingReconciler struct {
@@ -61,9 +51,7 @@ type ManagedFusionOfferingReconciler struct {
 	namespace             string
 	managedFusionOffering *v1alpha1.ManagedFusionOffering
 	operatorGroup         *opv1.OperatorGroup
-	catalogSource         *opv1a1.CatalogSource
 	subscription          *opv1a1.Subscription
-	installConfig         *installationConfig
 }
 
 //+kubebuilder:rbac:groups=misf.ibm.com,resources={managedfusionofferings,managedfusionofferings/finalizers},verbs=get;list;watch;create;update;patch;delete
@@ -111,29 +99,15 @@ func (r *ManagedFusionOfferingReconciler) initReconciler(ctx context.Context, re
 	r.managedFusionOffering.Namespace = req.Namespace
 
 	r.operatorGroup = &opv1.OperatorGroup{}
-	r.operatorGroup.Name = operatorGroupName
 	r.operatorGroup.Namespace = req.Namespace
 
-	r.catalogSource = &opv1a1.CatalogSource{}
-	r.catalogSource.Name = catalogSourceName
-	r.catalogSource.Namespace = req.Namespace
-
 	r.subscription = &opv1a1.Subscription{}
-	r.subscription.Name = subscriptionName
 	r.subscription.Namespace = req.Namespace
-
-	r.installConfig = &installationConfig{}
 }
 
 func (r *ManagedFusionOfferingReconciler) reconcilePhases() (reconcile.Result, error) {
-	if err := pluginGetInstallalConfig(r); err != nil {
-		return ctrl.Result{}, err
-	}
 
 	if err := r.reconcileOperatorGroup(); err != nil {
-		return ctrl.Result{}, err
-	}
-	if err := r.reconcileCatalogSource(); err != nil {
 		return ctrl.Result{}, err
 	}
 	if err := r.reconcileSubscription(); err != nil {
@@ -152,11 +126,15 @@ func pluginReconcile(r *ManagedFusionOfferingReconciler) (ctrl.Result, error) {
 
 func (r *ManagedFusionOfferingReconciler) reconcileOperatorGroup() error {
 	r.Log.Info(fmt.Sprintf("Reconciling operator group for %s offering deployment", r.managedFusionOffering.Spec.Kind))
+
+	r.operatorGroup.Name = fmt.Sprintf("%s-%s-offering", operatorGroupName, strings.ToLower(string(r.managedFusionOffering.Spec.Kind)))
 	_, err := ctrl.CreateOrUpdate(r.ctx, r.Client, r.operatorGroup, func() error {
 		if err := r.own(r.operatorGroup); err != nil {
 			return err
 		}
-		r.operatorGroup.Spec.TargetNamespaces = []string{r.namespace}
+		desiredOperatorGroup := &opv1.OperatorGroupSpec{}
+		pluginGetDesiredOperatorGroup(r, desiredOperatorGroup)
+		r.operatorGroup.Spec = *desiredOperatorGroup
 		return nil
 	})
 	if err != nil {
@@ -165,40 +143,19 @@ func (r *ManagedFusionOfferingReconciler) reconcileOperatorGroup() error {
 	return nil
 }
 
-func (r *ManagedFusionOfferingReconciler) reconcileCatalogSource() error {
-	r.Log.Info(fmt.Sprintf("Reconciling catalog source for %s offering deployment", r.managedFusionOffering.Spec.Kind))
-	_, err := ctrl.CreateOrUpdate(r.ctx, r.Client, r.catalogSource, func() error {
-		if err := r.own(r.catalogSource); err != nil {
-			return err
-		}
-		desired := templates.OCSCatalogSource.DeepCopy()
-		desired.Spec.DisplayName = r.installConfig.displayName
-		desired.Spec.Publisher = r.installConfig.publisher
-		desired.Spec.Image = r.installConfig.indexImage
-		r.catalogSource.Spec = desired.Spec
-		return nil
-	})
-	if err != nil {
-		return fmt.Errorf("Failed to create/update OLM catalog source: %v", err)
-	}
-	return nil
-}
-
 func (r *ManagedFusionOfferingReconciler) reconcileSubscription() error {
 	r.Log.Info(fmt.Sprintf("Reconciling subscription for %s offering deployment", r.managedFusionOffering.Spec.Kind))
+
+	r.subscription.Name = fmt.Sprintf("%s-%s-offering", subscriptionName, strings.ToLower(string(r.managedFusionOffering.Spec.Kind)))
 	_, err := ctrl.CreateOrUpdate(r.ctx, r.Client, r.subscription, func() error {
 		if err := r.own(r.subscription); err != nil {
 			return err
 		}
-		desired := templates.OCSSubscription.DeepCopy()
-		desired.Spec.CatalogSource = r.catalogSource.Name
-		desired.Spec.CatalogSourceNamespace = r.catalogSource.Namespace
-		desired.Spec.Channel = r.installConfig.channel
-		desired.Spec.StartingCSV = r.installConfig.startingCSV
-		desired.Spec.Package = r.installConfig.packageName
-		r.subscription.Spec = desired.Spec
+		desiredSubscriptionSpec := &opv1a1.SubscriptionSpec{}
+		pluginGetDesiredSubscriptionSpec(r, desiredSubscriptionSpec)
+		desiredSubscriptionSpec.InstallPlanApproval = opv1a1.ApprovalManual
+		r.subscription.Spec = desiredSubscriptionSpec
 		return nil
-
 	})
 	if err != nil {
 		return fmt.Errorf("Failed to create/update OLM subscription: %v", err)
@@ -207,35 +164,35 @@ func (r *ManagedFusionOfferingReconciler) reconcileSubscription() error {
 }
 
 func (r *ManagedFusionOfferingReconciler) reconcileInstallPlan() error {
-	r.Log.Info(fmt.Sprintf("Reconciling DF Operator install plan for %s offering deployment", r.managedFusionOffering.Spec.Kind))
+	r.Log.Info(fmt.Sprintf("Reconciling install plan for %s offering deployment", r.managedFusionOffering.Spec.Kind))
+
 	operatorCSV := &opv1a1.ClusterServiceVersion{}
 	operatorCSV.Name = r.subscription.Spec.StartingCSV
 	operatorCSV.Namespace = r.namespace
-	var requiredInstallPlan *opv1a1.InstallPlan
+	var desiredInstallPlan *opv1a1.InstallPlan
 	if err := r.get(operatorCSV); err != nil {
-		if errors.IsNotFound(err) {
-			installPlans := &opv1a1.InstallPlanList{}
-			if err := r.list(installPlans); err != nil {
-				return err
-			}
-			for _, installPlan := range installPlans.Items {
-				if utils.FindInSlice(installPlan.Spec.ClusterServiceVersionNames, operatorCSV.Name) {
-					requiredInstallPlan = &installPlan
-					break
-				}
-			}
-		} else {
+		if !errors.IsNotFound(err) {
 			return fmt.Errorf("failed to get CSV for %s offering deployment: %v", r.managedFusionOffering.Spec.Kind, err)
 		}
+		installPlans := &opv1a1.InstallPlanList{}
+		if err := r.list(installPlans); err != nil {
+			return err
+		}
+		for _, installPlan := range installPlans.Items {
+			if utils.Contains(installPlan.Spec.ClusterServiceVersionNames, operatorCSV.Name) {
+				desiredInstallPlan = &installPlan
+				break
+			}
+		}
 	}
-	if requiredInstallPlan == nil {
+	if desiredInstallPlan == nil {
 		r.Log.V(-1).Info(fmt.Sprintf("install plan not found for %s CSV", operatorCSV.Name))
 		return nil
 	}
-	if requiredInstallPlan.Spec.Approval == opv1a1.ApprovalManual &&
-		!requiredInstallPlan.Spec.Approved {
-		requiredInstallPlan.Spec.Approved = true
-		if err := r.update(requiredInstallPlan); err != nil {
+	if desiredInstallPlan.Spec.Approval == opv1a1.ApprovalManual &&
+		!desiredInstallPlan.Spec.Approved {
+		desiredInstallPlan.Spec.Approved = true
+		if err := r.update(desiredInstallPlan); err != nil {
 			return err
 		}
 	}
@@ -251,18 +208,22 @@ func pluginSetupWatches(controllerBuilder *builder.Builder) {
 }
 
 // This function is a placeholder for offering plugin integration
-func pluginGetInstallalConfig(r *ManagedFusionOfferingReconciler) error {
+func pluginGetDesiredOperatorGroup(r *ManagedFusionOfferingReconciler, operatorGroupSpec *opv1.OperatorGroupSpec) {
 	switch r.managedFusionOffering.Spec.Release {
 	case "4.12":
-		r.installConfig.displayName = "managed-fusion-ocs"
-		r.installConfig.publisher = "IBM"
-		r.installConfig.indexImage = "registry.redhat.io/redhat/redhat-operator-index:v4.12"
-		r.installConfig.startingCSV = "ocs-operator.v4.12.0"
-		r.installConfig.channel = "stable-4.12"
-		r.installConfig.packageName = "ocs-operator"
-		return nil
-	default:
-		return fmt.Errorf("Invalid release for %s offering", r.managedFusionOffering.Spec.Kind)
+		operatorGroupSpec.TargetNamespaces = []string{r.namespace}
+	}
+}
+
+// This function is a placeholder for offering plugin integration
+func pluginGetDesiredSubscriptionSpec(r *ManagedFusionOfferingReconciler, subscriptionSpec *opv1a1.SubscriptionSpec) {
+	switch r.managedFusionOffering.Spec.Release {
+	case "4.12":
+		subscriptionSpec.CatalogSource = "redhat-operators"
+		subscriptionSpec.CatalogSourceNamespace = "openshift-marketplace"
+		subscriptionSpec.Channel = "stable-4.12"
+		subscriptionSpec.Package = "ocs-operator"
+		subscriptionSpec.StartingCSV = "ocs-operator.v4.12.0"
 	}
 }
 
