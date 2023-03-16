@@ -29,16 +29,21 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	controller "sigs.k8s.io/controller-runtime/pkg/controller"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	"sigs.k8s.io/controller-runtime/pkg/source"
 )
 
 const (
-	operatorGroupName = "managed-fusion-og"
-	subscriptionName  = "managed-fusion-sub"
+	managedFusionAnnotationKey = "misf.ibm.com/managedfusionoffering"
+	operatorGroupName          = "managed-fusion-og"
+	subscriptionName           = "managed-fusion-sub"
 )
 
 // ManagedFusionOfferingReconciler reconciles a ManagedFusionOffering object
@@ -56,13 +61,48 @@ type ManagedFusionOfferingReconciler struct {
 
 //+kubebuilder:rbac:groups=misf.ibm.com,resources={managedfusionofferings,managedfusionofferings/finalizers},verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=misf.ibm.com,resources=managedfusionofferings/status,verbs=get;update;patch
-//+kubebuilder:rbac:groups="operators.coreos.com",resources={subscriptions,operatorgroups,catalogsources},verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups="operators.coreos.com",resources={subscriptions,operatorgroups},verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups="operators.coreos.com",resources=installplans,verbs=get;list;watch;update;patch
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *ManagedFusionOfferingReconciler) SetupWithManager(mgr ctrl.Manager, ctrlOptions *controller.Options) error {
+	installPlanPredicate := builder.WithPredicates(
+		predicate.NewPredicateFuncs(
+			func(object client.Object) bool {
+				owners := object.GetOwnerReferences()
+				for _, owner := range owners {
+					if strings.HasPrefix(owner.Name, subscriptionName) {
+						return true
+					}
+				}
+				return false
+			},
+		),
+	)
+	enqueueManagedFusionOfferingRequest := handler.EnqueueRequestsFromMapFunc(
+		func(object client.Object) []reconcile.Request {
+			annotations := object.GetAnnotations()
+			if annotation, found := annotations[managedFusionAnnotationKey]; found {
+				namespacedName := strings.Split(annotation, "/")
+				return []reconcile.Request{{
+					NamespacedName: types.NamespacedName{
+						Namespace: namespacedName[0],
+						Name:      namespacedName[1],
+					},
+				}}
+			}
+			return []reconcile.Request{}
+		},
+	)
 	controllerBuilder := ctrl.NewControllerManagedBy(mgr).
-		For(&v1alpha1.ManagedFusionOffering{})
+		For(&v1alpha1.ManagedFusionOffering{}).
+		Owns(&opv1.OperatorGroup{}).
+		Owns(&opv1a1.Subscription{}).
+		Watches(
+			&source.Kind{Type: &opv1a1.InstallPlan{}},
+			enqueueManagedFusionOfferingRequest,
+			installPlanPredicate,
+		)
 
 	pluginSetupWatches(controllerBuilder)
 
@@ -192,6 +232,7 @@ func (r *ManagedFusionOfferingReconciler) reconcileInstallPlan() error {
 	if desiredInstallPlan.Spec.Approval == opv1a1.ApprovalManual &&
 		!desiredInstallPlan.Spec.Approved {
 		desiredInstallPlan.Spec.Approved = true
+		r.addManagedFusionOfferingAnnotation(desiredInstallPlan)
 		if err := r.update(desiredInstallPlan); err != nil {
 			return err
 		}
@@ -200,12 +241,7 @@ func (r *ManagedFusionOfferingReconciler) reconcileInstallPlan() error {
 }
 
 // This function is a placeholder for offering plugin integration
-func pluginSetupWatches(controllerBuilder *builder.Builder) {
-	controllerBuilder.
-		Owns(&opv1.OperatorGroup{}).
-		Owns(&opv1a1.CatalogSource{}).
-		Owns(&opv1a1.Subscription{})
-}
+func pluginSetupWatches(controllerBuilder *builder.Builder) {}
 
 // This function is a placeholder for offering plugin integration
 func pluginGetDesiredOperatorGroup(r *ManagedFusionOfferingReconciler, operatorGroupSpec *opv1.OperatorGroupSpec) {
@@ -225,6 +261,16 @@ func pluginGetDesiredSubscriptionSpec(r *ManagedFusionOfferingReconciler, subscr
 		subscriptionSpec.Package = "ocs-operator"
 		subscriptionSpec.StartingCSV = "ocs-operator.v4.12.0"
 	}
+}
+
+func (r *ManagedFusionOfferingReconciler) addManagedFusionOfferingAnnotation(obj metav1.Object) {
+	annotations := obj.GetAnnotations()
+	if annotations == nil {
+		annotations = map[string]string{}
+		obj.SetAnnotations(annotations)
+	}
+	value := fmt.Sprintf("%s/%s", r.managedFusionOffering.Namespace, r.managedFusionOffering.Name)
+	annotations[managedFusionAnnotationKey] = value
 }
 
 func (r *ManagedFusionOfferingReconciler) get(obj client.Object) error {
