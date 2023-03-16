@@ -73,6 +73,8 @@ func addAllSchemes(scheme *runtime.Scheme) {
 	utilruntime.Must(configv1.AddToScheme(scheme))
 
 	utilruntime.Must(misfv1a1.AddToScheme(scheme))
+
+	utilruntime.Must(opv1.AddToScheme(scheme))
 	// +kubebuilder:scaffold:scheme
 
 	pluginAddToScheme(scheme)
@@ -150,7 +152,4 @@ func getUnrestrictedClient() client.Client {
 }
 
 // This function is a placeholder for offering plugin integration
-func pluginAddToScheme(scheme *runtime.Scheme) {
-
-	utilruntime.Must(opv1.AddToScheme(scheme))
-}
+func pluginAddToScheme(scheme *runtime.Scheme) {}
