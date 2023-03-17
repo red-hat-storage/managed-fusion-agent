@@ -19,7 +19,6 @@ package controllers
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/go-logr/logr"
 	opv1 "github.com/operator-framework/api/pkg/operators/v1"
@@ -35,9 +34,9 @@ import (
 )
 
 const (
-	operatorGroupName = "managed-fusion-og"
-	catalogSourceName = "managed-fusion-catsrc"
-	subscriptionName  = "managed-fusion-sub"
+	operatorGroupName = "managed-fusion-offering-og"
+	catalogSourceName = "managed-fusion-offering-catalog"
+	subscriptionName  = "managed-fusion-offering"
 )
 
 // ManagedFusionOfferingReconciler reconciles a ManagedFusionOffering object
@@ -63,6 +62,7 @@ func (r *ManagedFusionOfferingReconciler) SetupWithManager(mgr ctrl.Manager, ctr
 	controllerBuilder := ctrl.NewControllerManagedBy(mgr).
 		For(&v1alpha1.ManagedFusionOffering{}).
 		Owns(&opv1.OperatorGroup{}).
+		Owns(&opv1a1.CatalogSource{}).
 		Owns(&opv1a1.Subscription{})
 
 	pluginSetupWatches(controllerBuilder)
@@ -81,7 +81,7 @@ func (r *ManagedFusionOfferingReconciler) Reconcile(ctx context.Context, req ctr
 	}
 
 	if result, err := r.reconcilePhases(); err != nil {
-		return result, fmt.Errorf("An error was encountered during reconcilePhases: %v", err)
+		return result, fmt.Errorf("an error was encountered during reconcilePhases: %v", err)
 	}
 
 	if result, err := pluginReconcile(r); err != nil {
@@ -100,12 +100,15 @@ func (r *ManagedFusionOfferingReconciler) initReconciler(ctx context.Context, re
 	r.managedFusionOffering.Namespace = req.Namespace
 
 	r.operatorGroup = &opv1.OperatorGroup{}
+	r.operatorGroup.Name = operatorGroupName
 	r.operatorGroup.Namespace = req.Namespace
 
 	r.catalogSource = &opv1a1.CatalogSource{}
+	r.catalogSource.Name = catalogSourceName
 	r.catalogSource.Namespace = req.Namespace
 
 	r.subscription = &opv1a1.Subscription{}
+	r.subscription.Name = subscriptionName
 	r.subscription.Namespace = req.Namespace
 }
 
@@ -123,15 +126,9 @@ func (r *ManagedFusionOfferingReconciler) reconcilePhases() (reconcile.Result, e
 	return ctrl.Result{}, nil
 }
 
-// This function is a placeholder for offering plugin integration
-func pluginReconcile(r *ManagedFusionOfferingReconciler) (ctrl.Result, error) {
-	return ctrl.Result{}, nil
-}
-
 func (r *ManagedFusionOfferingReconciler) reconcileOperatorGroup() error {
 	r.Log.Info(fmt.Sprintf("Reconciling operator group for %s offering deployment", r.managedFusionOffering.Spec.Kind))
 
-	r.operatorGroup.Name = fmt.Sprintf("%s-%s-offering", operatorGroupName, strings.ToLower(string(r.managedFusionOffering.Spec.Kind)))
 	_, err := ctrl.CreateOrUpdate(r.ctx, r.Client, r.operatorGroup, func() error {
 		if err := r.own(r.operatorGroup); err != nil {
 			return err
@@ -148,15 +145,12 @@ func (r *ManagedFusionOfferingReconciler) reconcileOperatorGroup() error {
 func (r *ManagedFusionOfferingReconciler) reconcileCatalogSource() error {
 	r.Log.Info(fmt.Sprintf("Reconciling catalog source for %s offering deployment", r.managedFusionOffering.Spec.Kind))
 
-	r.catalogSource.Name = fmt.Sprintf("%s-%s-offering", catalogSourceName, strings.ToLower(string(r.managedFusionOffering.Spec.Kind)))
 	_, err := ctrl.CreateOrUpdate(r.ctx, r.Client, r.catalogSource, func() error {
 		if err := r.own(r.catalogSource); err != nil {
 			return err
 		}
 		desiredCatalogSourceSpec := pluginGetDesiredCatalogSourceSpec(r)
 		r.catalogSource.Spec = desiredCatalogSourceSpec
-		r.catalogSource.Spec.DisplayName = fmt.Sprintf("managed-fusion-%s-offering", strings.ToLower(string(r.managedFusionOffering.Spec.Kind)))
-		r.catalogSource.Spec.Publisher = "IBM"
 		r.catalogSource.Spec.SourceType = opv1a1.SourceTypeGrpc
 		return nil
 	})
@@ -169,7 +163,6 @@ func (r *ManagedFusionOfferingReconciler) reconcileCatalogSource() error {
 func (r *ManagedFusionOfferingReconciler) reconcileSubscription() error {
 	r.Log.Info(fmt.Sprintf("Reconciling subscription for %s offering deployment", r.managedFusionOffering.Spec.Kind))
 
-	r.subscription.Name = fmt.Sprintf("%s-%s-offering", subscriptionName, strings.ToLower(string(r.managedFusionOffering.Spec.Kind)))
 	_, err := ctrl.CreateOrUpdate(r.ctx, r.Client, r.subscription, func() error {
 		if err := r.own(r.subscription); err != nil {
 			return err
@@ -185,6 +178,23 @@ func (r *ManagedFusionOfferingReconciler) reconcileSubscription() error {
 		return fmt.Errorf("failed to create/update OLM subscription: %v", err)
 	}
 	return nil
+}
+
+func (r *ManagedFusionOfferingReconciler) get(obj client.Object) error {
+	key := client.ObjectKeyFromObject(obj)
+	return r.Client.Get(r.ctx, key, obj)
+}
+
+func (r *ManagedFusionOfferingReconciler) own(resource metav1.Object) error {
+	// Ensure ManangedFusionOffering CR ownership on a resource
+	return ctrl.SetControllerReference(r.managedFusionOffering, resource, r.Scheme)
+}
+
+// All the below functions are placeholder for offering plugin integration
+
+// This function is a placeholder for offering plugin integration
+func pluginReconcile(r *ManagedFusionOfferingReconciler) (ctrl.Result, error) {
+	return ctrl.Result{}, nil
 }
 
 // This function is a placeholder for offering plugin integration
@@ -210,14 +220,4 @@ func pluginGetDesiredSubscriptionSpec(r *ManagedFusionOfferingReconciler) *opv1a
 		Channel: "stable-4.12",
 		Package: "ocs-operator",
 	}
-}
-
-func (r *ManagedFusionOfferingReconciler) get(obj client.Object) error {
-	key := client.ObjectKeyFromObject(obj)
-	return r.Client.Get(r.ctx, key, obj)
-}
-
-func (r *ManagedFusionOfferingReconciler) own(resource metav1.Object) error {
-	// Ensure ManangedFusionOffering CR ownership on a resource
-	return ctrl.SetControllerReference(r.managedFusionOffering, resource, r.Scheme)
 }
