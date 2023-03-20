@@ -19,6 +19,7 @@ package controllers
 import (
 	"context"
 	"fmt"
+	"strconv"
 
 	"github.com/go-logr/logr"
 	opv1 "github.com/operator-framework/api/pkg/operators/v1"
@@ -192,9 +193,60 @@ func (r *ManagedFusionOfferingReconciler) own(resource metav1.Object) error {
 
 // All the below functions are placeholder for offering plugin integration
 
+type dataFoundationSpec struct {
+	usableCapacityInTiB     int
+	onboardingValidationKey string
+}
+
 // This function is a placeholder for offering plugin integration
 func pluginReconcile(r *ManagedFusionOfferingReconciler) (ctrl.Result, error) {
+	if _, err := parseDataFoundationSpec(r); err != nil {
+		return ctrl.Result{}, err
+	}
+
 	return ctrl.Result{}, nil
+}
+
+func parseDataFoundationSpec(r *ManagedFusionOfferingReconciler) (dataFoundationSpec, error) {
+	r.Log.Info("Parsing ManagedFusionOffering Data Foundation spec")
+
+	valid := true
+	var usableCapacityInTiB int
+	var err error
+	if usableCapacityInTiBAsString, found := r.managedFusionOffering.Spec.Config["usableCapacityInTiB"]; !found {
+		r.Log.Error(
+			fmt.Errorf("missing field: usableCapacityInTiB"),
+			"an error occurred while parsing ManagedFusionOffering Data Foundation spec",
+		)
+		valid = false
+	} else if usableCapacityInTiB, err = strconv.Atoi(usableCapacityInTiBAsString); err != nil {
+		r.Log.Error(
+			fmt.Errorf("error parsing usableCapacityInTib: %v", err),
+			"an error occurred while parsing ManagedFusionOffering Data Foundation spec",
+		)
+		valid = false
+	}
+
+	var onboardingValidationKeyAsString string
+	var found bool
+	if onboardingValidationKeyAsString, found = r.managedFusionOffering.Spec.Config["onboardingValidationKey"]; !found {
+		r.Log.Error(
+			fmt.Errorf("missing field: onboardingValidationKey"),
+			"an error occurred while parsing ManagedFusionOffering Data Foundation spec",
+		)
+		valid = false
+	}
+
+	if !valid {
+		r.Log.Info("parsing ManagedFusionOffering Data Foundation spec failed")
+		return dataFoundationSpec{}, fmt.Errorf("invalid ManagedFusionOffering Data Foundation spec")
+	}
+	r.Log.Info("parsing ManagedFusionOffering Data Foundation spec completed successfuly")
+
+	return dataFoundationSpec{
+		usableCapacityInTiB:     usableCapacityInTiB,
+		onboardingValidationKey: onboardingValidationKeyAsString,
+	}, nil
 }
 
 // This function is a placeholder for offering plugin integration
