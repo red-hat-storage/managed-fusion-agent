@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	opv1a1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
 	v1alpha1 "github.com/red-hat-storage/managed-fusion-agent/api/v1alpha1"
 	"github.com/red-hat-storage/managed-fusion-agent/datafoundation"
 	ocsv1 "github.com/red-hat-storage/ocs-operator/api/v1"
@@ -14,12 +15,14 @@ import (
 	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
-	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 )
 
 const (
 	defaultDeviceSetName = "default"
+	ocsOperatorName      = "ocs-operator"
 )
 
 type dataFoundationSpec struct {
@@ -30,6 +33,8 @@ type dataFoundationSpec struct {
 type dataFoundationReconciler struct {
 	*ManagedFusionOfferingReconciler
 
+	dfName                         string
+	dfNamespace                    string
 	spec                           dataFoundationSpec
 	onboardingValidationKeySecret  *corev1.Secret
 	storageCluster                 *ocsv1.StorageCluster
@@ -40,13 +45,22 @@ type dataFoundationReconciler struct {
 
 //+kubebuilder:rbac:groups=ocs.openshift.io,namespace=system,resources=storageclusters,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=network.openshift.io,resources=ingressnetworkpolicies,verbs=create;get;list;watch;update
+//+kubebuilder:rbac:groups=operators.coreos.com,namespace=system,resources=clusterserviceversions,verbs=get;list;watch;delete;update;patch
 
 func dfSetupWatches(controllerBuilder *builder.Builder) {
+	csvPredicates := builder.WithPredicates(
+		predicate.NewPredicateFuncs(
+			func(res client.Object) bool {
+				return strings.HasPrefix(res.GetName(), ocsOperatorName)
+			},
+		),
+	)
 	controllerBuilder.
 		Owns(&corev1.Secret{}).
 		Owns(&ocsv1.StorageCluster{}).
 		Owns(&netv1.NetworkPolicy{}).
-		Owns(&corev1.ConfigMap{})
+		Owns(&corev1.ConfigMap{}).
+		Owns(&opv1a1.ClusterServiceVersion{}, csvPredicates)
 }
 
 func DFAddToScheme(scheme *runtime.Scheme) {
@@ -55,7 +69,7 @@ func DFAddToScheme(scheme *runtime.Scheme) {
 
 func dfReconcile(offeringReconciler *ManagedFusionOfferingReconciler, offering *v1alpha1.ManagedFusionOffering) error {
 	r := dataFoundationReconciler{}
-	r.initReconciler(offeringReconciler)
+	r.initReconciler(offeringReconciler, offering)
 
 	if err := r.parseSpec(offering); err != nil {
 		return err
@@ -64,6 +78,9 @@ func dfReconcile(offeringReconciler *ManagedFusionOfferingReconciler, offering *
 		return err
 	}
 	if err := r.reconcileStorageCluster(); err != nil {
+		return err
+	}
+	if err := r.reconcileCSV(); err != nil {
 		return err
 	}
 	if err := r.reconcileCephIngressNetworkPolicy(); err != nil {
@@ -79,28 +96,35 @@ func dfReconcile(offeringReconciler *ManagedFusionOfferingReconciler, offering *
 	return nil
 }
 
-func (r *dataFoundationReconciler) initReconciler(offeringReconciler *ManagedFusionOfferingReconciler) {
-	r.ManagedFusionOfferingReconciler = offeringReconciler
+func (r *dataFoundationReconciler) initReconciler(reconciler *ManagedFusionOfferingReconciler, offering *v1alpha1.ManagedFusionOffering) {
+	r.ManagedFusionOfferingReconciler = reconciler
+
+	r.dfName = offering.Name
+	r.dfNamespace = offering.Namespace
 
 	r.onboardingValidationKeySecret = &corev1.Secret{}
 	r.onboardingValidationKeySecret.Name = "onboarding-ticket-key"
-	r.onboardingValidationKeySecret.Namespace = r.Namespace
+	r.onboardingValidationKeySecret.Namespace = offering.Namespace
 
 	r.storageCluster = &ocsv1.StorageCluster{}
 	r.storageCluster.Name = "ocs-storagecluster"
-	r.storageCluster.Namespace = r.Namespace
+	r.storageCluster.Namespace = offering.Namespace
 
 	r.cephIngressNetworkPolicy = &netv1.NetworkPolicy{}
 	r.cephIngressNetworkPolicy.Name = "ceph-ingress-rule"
-	r.cephIngressNetworkPolicy.Namespace = r.Namespace
+	r.cephIngressNetworkPolicy.Namespace = offering.Namespace
 
 	r.providerAPIServerNetworkPolicy = &netv1.NetworkPolicy{}
 	r.providerAPIServerNetworkPolicy.Name = "provider-api-server-rule"
-	r.providerAPIServerNetworkPolicy.Namespace = r.Namespace
+	r.providerAPIServerNetworkPolicy.Namespace = offering.Namespace
 
 	r.rookConfigMap = &corev1.ConfigMap{}
 	r.rookConfigMap.Name = "rook-ceph-operator-config"
-	r.rookConfigMap.Namespace = r.Namespace
+	r.rookConfigMap.Namespace = offering.Namespace
+
+	r.providerAPIServerNetworkPolicy = &netv1.NetworkPolicy{}
+	r.providerAPIServerNetworkPolicy.Name = "provider-api-server-rule"
+	r.providerAPIServerNetworkPolicy.Namespace = offering.Namespace
 }
 
 func (r *dataFoundationReconciler) parseSpec(offering *v1alpha1.ManagedFusionOffering) error {
@@ -149,8 +173,8 @@ func (r *dataFoundationReconciler) parseSpec(offering *v1alpha1.ManagedFusionOff
 func (r *dataFoundationReconciler) reconcileOnboardingValidationSecret() error {
 	r.Log.Info("Reconciling onboardingValidationKey secret")
 
-	_, err := ctrl.CreateOrUpdate(r.Ctx, r.Client, r.onboardingValidationKeySecret, func() error {
-		if err := r.own(r.onboardingValidationKeySecret); err != nil {
+	_, err := r.CreateOrUpdate(r.onboardingValidationKeySecret, func() error {
+		if err := r.own(r.onboardingValidationKeySecret, true); err != nil {
 			return err
 		}
 		onboardingValidationData := fmt.Sprintf(
@@ -171,8 +195,8 @@ func (r *dataFoundationReconciler) reconcileOnboardingValidationSecret() error {
 func (r *dataFoundationReconciler) reconcileStorageCluster() error {
 	r.Log.Info("Reconciling StorageCluster")
 
-	_, err := ctrl.CreateOrUpdate(r.Ctx, r.Client, r.storageCluster, func() error {
-		if err := r.own(r.storageCluster); err != nil {
+	_, err := r.CreateOrUpdate(r.storageCluster, func() error {
+		if err := r.own(r.storageCluster, true); err != nil {
 			return err
 		}
 
@@ -226,9 +250,37 @@ func (r *dataFoundationReconciler) setDeviceSetCount(deviceSet *ocsv1.StorageDev
 	}
 }
 
+func (r *dataFoundationReconciler) reconcileCSV() error {
+	r.Log.Info("Reconciling OCS Operator CSV")
+
+	csv, err := r.getCSVByPrefix(ocsOperatorName)
+	if err != nil {
+		return fmt.Errorf("unable to find OCS CSV: %v", err)
+	}
+	err = r.GetAndUpdate(csv, func() error {
+		if err := r.own(csv, false); err != nil {
+			return fmt.Errorf("unable to set ownerRef on ocs csv: %v", err)
+		}
+		deployments := csv.Spec.InstallStrategy.StrategySpec.DeploymentSpecs
+		for i := range deployments {
+			containers := deployments[i].Spec.Template.Spec.Containers
+			for j := range containers {
+				container := &containers[j]
+				resources := datafoundation.GetResourceRequirements(container.Name)
+				container.Resources = resources
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("failed to update OCS CSV: %v", err)
+	}
+	return nil
+}
+
 func (r *dataFoundationReconciler) reconcileCephIngressNetworkPolicy() error {
-	_, err := ctrl.CreateOrUpdate(r.Ctx, r.Client, r.cephIngressNetworkPolicy, func() error {
-		if err := r.own(r.cephIngressNetworkPolicy); err != nil {
+	_, err := r.CreateOrUpdate(r.cephIngressNetworkPolicy, func() error {
+		if err := r.own(r.cephIngressNetworkPolicy, true); err != nil {
 			return err
 		}
 		desired := datafoundation.CephNetworkPolicyTemplate.DeepCopy()
@@ -242,8 +294,8 @@ func (r *dataFoundationReconciler) reconcileCephIngressNetworkPolicy() error {
 }
 
 func (r *dataFoundationReconciler) reconcileProviderAPIServerNetworkPolicy() error {
-	_, err := ctrl.CreateOrUpdate(r.Ctx, r.Client, r.providerAPIServerNetworkPolicy, func() error {
-		if err := r.own(r.providerAPIServerNetworkPolicy); err != nil {
+	_, err := r.CreateOrUpdate(r.providerAPIServerNetworkPolicy, func() error {
+		if err := r.own(r.providerAPIServerNetworkPolicy, true); err != nil {
 			return err
 		}
 		desired := datafoundation.ProviderApiServerNetworkPolicyTemplate.DeepCopy()

@@ -44,36 +44,6 @@ var resourceRequirements = map[string]corev1.ResourceRequirements{
 			"memory": resource.MustParse("200Mi"),
 		},
 	},
-	"ocs-operator": {
-		Limits: corev1.ResourceList{
-			"cpu":    resource.MustParse("200m"),
-			"memory": resource.MustParse("800Mi"),
-		},
-		Requests: corev1.ResourceList{
-			"cpu":    resource.MustParse("200m"),
-			"memory": resource.MustParse("800Mi"),
-		},
-	},
-	"rook-ceph-operator": {
-		Limits: corev1.ResourceList{
-			"cpu":    resource.MustParse("300m"),
-			"memory": resource.MustParse("200Mi"),
-		},
-		Requests: corev1.ResourceList{
-			"cpu":    resource.MustParse("300m"),
-			"memory": resource.MustParse("200Mi"),
-		},
-	},
-	"ocs-metrics-exporter": {
-		Limits: corev1.ResourceList{
-			"cpu":    resource.MustParse("60m"),
-			"memory": resource.MustParse("75Mi"),
-		},
-		Requests: corev1.ResourceList{
-			"cpu":    resource.MustParse("60m"),
-			"memory": resource.MustParse("75Mi"),
-		},
-	},
 	"csi-provisioner": {
 		Requests: corev1.ResourceList{
 			"memory": resource.MustParse("85Mi"),
