@@ -152,4 +152,6 @@ func getUnrestrictedClient() client.Client {
 }
 
 // This function is a placeholder for offering plugin integration
-func pluginAddToScheme(scheme *runtime.Scheme) {}
+func pluginAddToScheme(scheme *runtime.Scheme) {
+	controllers.DFAddToScheme(scheme)
+}
