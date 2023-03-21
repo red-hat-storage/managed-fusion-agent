@@ -53,34 +53,34 @@ func (r *dataFoundationReconciler) initReconciler(offeringReconciler *ManagedFus
 func (r *dataFoundationReconciler) parseSpec(offering *v1alpha1.ManagedFusionOffering) error {
 	r.Log.Info("Parsing ManagedFusionOffering Data Foundation spec")
 
-	valid := true
-	var usableCapacityInTiB int
+	isValid := true
 	var err error
-	if usableCapacityInTiBAsString, found := offering.Spec.Config["usableCapacityInTiB"]; !found {
+	var usableCapacityInTiB int
+	usableCapacityInTiBAsString, found := offering.Spec.Config["usableCapacityInTiB"]
+	if !found {
 		r.Log.Error(
 			fmt.Errorf("missing field: usableCapacityInTiB"),
 			"an error occurred while parsing ManagedFusionOffering Data Foundation spec",
 		)
-		valid = false
+		isValid = false
 	} else if usableCapacityInTiB, err = strconv.Atoi(usableCapacityInTiBAsString); err != nil {
 		r.Log.Error(
 			fmt.Errorf("error parsing usableCapacityInTib: %v", err),
 			"an error occurred while parsing ManagedFusionOffering Data Foundation spec",
 		)
-		valid = false
+		isValid = false
 	}
 
-	var onboardingValidationKeyAsString string
-	var found bool
-	if onboardingValidationKeyAsString, found = offering.Spec.Config["onboardingValidationKey"]; !found {
+	onboardingValidationKeyAsString, found := offering.Spec.Config["onboardingValidationKey"]
+	if !found {
 		r.Log.Error(
 			fmt.Errorf("missing field: onboardingValidationKey"),
 			"an error occurred while parsing ManagedFusionOffering Data Foundation spec",
 		)
-		valid = false
+		isValid = false
 	}
 
-	if !valid {
+	if !isValid {
 		r.Log.Info("parsing ManagedFusionOffering Data Foundation spec failed")
 		return fmt.Errorf("invalid ManagedFusionOffering Data Foundation spec")
 	}
