@@ -30,7 +30,7 @@ import (
 // PrometheusTemplate is the template that serves as the base for the prometheus deployed by the operator
 var resourceSelector = metav1.LabelSelector{
 	MatchLabels: map[string]string{
-		"app": "managed-ocs",
+		"app": "managed-fusion-agent",
 	},
 }
 
