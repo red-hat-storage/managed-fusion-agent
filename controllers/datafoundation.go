@@ -176,6 +176,7 @@ func (r *dataFoundationReconciler) reconcileStorageCluster() error {
 
 		// Prevent downscaling by comparing count from secret and count from storage cluster
 		r.setDeviceSetCount(ds, desiredDeviceSetCount, currDeviceSetCount)
+		r.storageCluster.Spec = sc.Spec
 
 		return nil
 	})
