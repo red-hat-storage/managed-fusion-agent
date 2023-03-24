@@ -19,16 +19,22 @@ package controllers
 import (
 	"context"
 	"fmt"
+	"os"
 
 	"github.com/go-logr/logr"
 	opv1 "github.com/operator-framework/api/pkg/operators/v1"
 	opv1a1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
 	v1alpha1 "github.com/red-hat-storage/managed-fusion-agent/api/v1alpha1"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
+	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/config"
 	controller "sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
@@ -51,6 +57,7 @@ type ManagedFusionOfferingReconciler struct {
 	operatorGroup         *opv1.OperatorGroup
 	catalogSource         *opv1a1.CatalogSource
 	subscription          *opv1a1.Subscription
+	DoesCRDExistsAtStart  bool
 }
 
 //+kubebuilder:rbac:groups=misf.ibm.com,resources={managedfusionofferings,managedfusionofferings/finalizers},verbs=get;list;watch;create;update;patch;delete
@@ -65,9 +72,40 @@ func (r *ManagedFusionOfferingReconciler) SetupWithManager(mgr ctrl.Manager, ctr
 		Owns(&opv1a1.CatalogSource{}).
 		Owns(&opv1a1.Subscription{})
 
-	pluginSetupWatches(controllerBuilder)
+	if doesCRDsExists() {
+		r.DoesCRDExistsAtStart = true
+		pluginSetupWatches(controllerBuilder)
+	}
 
 	return controllerBuilder.Complete(r)
+}
+
+func doesCRDsExists() bool {
+
+	var options client.Options
+	options.Scheme = runtime.NewScheme()
+	utilruntime.Must(apiextensionsv1.AddToScheme(options.Scheme))
+
+	setupLog := ctrl.Log.WithName("setup")
+	k8sClient, err := client.New(config.GetConfigOrDie(), options)
+	if err != nil {
+		setupLog.Error(err, "error creating client")
+		os.Exit(1)
+	}
+
+	crd := apiextensionsv1.CustomResourceDefinition{}
+	err = k8sClient.Get(context.Background(), types.NamespacedName{Name: "storageclusters.ocs.openshift.io"}, &crd)
+
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return false
+		} else {
+			setupLog.Error(err, fmt.Sprintf("Error Getting CRD for %s", "storageclusters.ocs.openshift.io"))
+			os.Exit(1)
+		}
+	}
+
+	return true
 }
 
 func (r *ManagedFusionOfferingReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -84,11 +122,20 @@ func (r *ManagedFusionOfferingReconciler) Reconcile(ctx context.Context, req ctr
 		return result, fmt.Errorf("an error was encountered during reconcilePhases: %v", err)
 	}
 
-	if result, err := pluginReconcile(r, r.managedFusionOffering); err != nil {
-		return ctrl.Result{}, fmt.Errorf("An error was encountered during reconcile: %v", err)
+	if !r.DoesCRDExistsAtStart {
+		if doesCRDsExists() {
+			r.Log.Info("Restarting to add watches for offering resources")
+			os.Exit(1)
+		}
 	} else {
-		return result, nil
+		if result, err := pluginReconcile(r, r.managedFusionOffering); err != nil {
+			return ctrl.Result{}, fmt.Errorf("An error was encountered during reconcile: %v", err)
+		} else {
+			return result, nil
+		}
 	}
+
+	return ctrl.Result{}, nil
 }
 
 func (r *ManagedFusionOfferingReconciler) initReconciler(ctx context.Context, req ctrl.Request) {
