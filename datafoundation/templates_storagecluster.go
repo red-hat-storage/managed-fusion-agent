@@ -115,8 +115,8 @@ var StorageClusterTemplate = ocsv1.StorageCluster{
 			},
 		}},
 		StorageDeviceSets: []ocsv1.StorageDeviceSet{{
-			Name:  "default",
-			Count: 1,
+			Name:        "default",
+			Count:       1,
 			Replica:     3,
 			DeviceClass: "ssd",
 			DataPVCTemplate: corev1.PersistentVolumeClaim{
@@ -144,8 +144,8 @@ var StorageClusterTemplate = ocsv1.StorageCluster{
 					preparePlacementTSC,
 				},
 			},
-			Portable:    true,
-			Resources:   GetResourceRequirements("sds"),
+			Portable:  true,
+			Resources: GetResourceRequirements("sds"),
 		}},
 		MultiCloudGateway: &ocsv1.MultiCloudGatewaySpec{
 			ReconcileStrategy: "ignore",
