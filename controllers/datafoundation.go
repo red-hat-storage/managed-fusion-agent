@@ -29,10 +29,11 @@ type dataFoundationSpec struct {
 type dataFoundationReconciler struct {
 	*ManagedFusionOfferingReconciler
 
-	spec                          dataFoundationSpec
-	onboardingValidationKeySecret *corev1.Secret
-	storageCluster                *ocsv1.StorageCluster
-	cephIngressNetworkPolicy      *netv1.NetworkPolicy
+	spec                           dataFoundationSpec
+	onboardingValidationKeySecret  *corev1.Secret
+	storageCluster                 *ocsv1.StorageCluster
+	cephIngressNetworkPolicy       *netv1.NetworkPolicy
+	providerAPIServerNetworkPolicy *netv1.NetworkPolicy
 }
 
 //+kubebuilder:rbac:groups=ocs.openshift.io,namespace=system,resources=storageclusters,verbs=get;list;watch;create;update;patch;delete
@@ -65,6 +66,9 @@ func dfReconcile(offeringReconciler *ManagedFusionOfferingReconciler, offering *
 	if err := r.reconcileCephIngressNetworkPolicy(); err != nil {
 		return err
 	}
+	if err := r.reconcileProviderAPIServerNetworkPolicy(); err != nil {
+		return err
+	}
 
 	return nil
 }
@@ -83,6 +87,9 @@ func (r *dataFoundationReconciler) initReconciler(offeringReconciler *ManagedFus
 	r.cephIngressNetworkPolicy = &netv1.NetworkPolicy{}
 	r.cephIngressNetworkPolicy.Name = "ceph-ingress-rule"
 	r.cephIngressNetworkPolicy.Namespace = r.Namespace
+	r.providerAPIServerNetworkPolicy = &netv1.NetworkPolicy{}
+	r.providerAPIServerNetworkPolicy.Name = "provider-api-server-rule"
+	r.providerAPIServerNetworkPolicy.Namespace = r.Namespace
 }
 
 func (r *dataFoundationReconciler) parseSpec(offering *v1alpha1.ManagedFusionOffering) error {
@@ -218,6 +225,21 @@ func (r *dataFoundationReconciler) reconcileCephIngressNetworkPolicy() error {
 	})
 	if err != nil {
 		return fmt.Errorf("Failed to update ceph ingress NetworkPolicy: %v", err)
+	}
+	return nil
+}
+
+func (r *dataFoundationReconciler) reconcileProviderAPIServerNetworkPolicy() error {
+	_, err := ctrl.CreateOrUpdate(r.Ctx, r.Client, r.providerAPIServerNetworkPolicy, func() error {
+		if err := r.own(r.providerAPIServerNetworkPolicy); err != nil {
+			return err
+		}
+		desired := datafoundation.ProviderApiServerNetworkPolicyTemplate.DeepCopy()
+		r.providerAPIServerNetworkPolicy.Spec = desired.Spec
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("Failed to update provider api server NetworkPolicy: %v", err)
 	}
 	return nil
 }
