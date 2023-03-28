@@ -25,6 +25,9 @@ import (
 	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 )
 
 // Contains checks whether a string is contained within a slice
@@ -58,13 +61,49 @@ func AddLabel(obj metav1.Object, key string, value string) {
 	labels[key] = value
 }
 
-func AddAnnotation(obj metav1.Object, key string, value string) {
+func AddAnnotation(obj metav1.Object, key string, value string) bool {
 	annotations := obj.GetAnnotations()
 	if annotations == nil {
-		annotations = make(map[string]string)
+		annotations = map[string]string{}
 		obj.SetAnnotations(annotations)
 	}
-	annotations[key] = value
+	if curr, found := annotations[key]; !found || curr != value {
+		annotations[key] = value
+		return true
+	}
+	return false
+}
+
+func AddOwnerReference(owner, res client.Object, scheme *runtime.Scheme, isController bool) error {
+	gvk, err := apiutil.GVKForObject(owner, scheme)
+	if err != nil {
+		return err
+	}
+	ref := metav1.OwnerReference{
+		APIVersion: gvk.GroupVersion().String(),
+		Kind:       gvk.Kind,
+		Name:       owner.GetName(),
+		UID:        owner.GetUID(),
+		Controller: &isController,
+	}
+	owners := res.GetOwnerReferences()
+	index := -1
+	for i := range owners {
+		if ref.APIVersion == owners[i].APIVersion &&
+			ref.Kind == owners[i].Kind &&
+			ref.Name == owners[i].Name &&
+			ref.UID == owners[i].UID {
+			index = i
+			break
+		}
+	}
+	if index != -1 {
+		owners[index] = ref
+	} else {
+		owners = append(owners, ref)
+	}
+	res.SetOwnerReferences(owners)
+	return nil
 }
 
 func MapItems(source []string, transform func(string) string) []string {
