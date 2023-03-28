@@ -17,16 +17,22 @@ limitations under the License.
 package main
 
 import (
+	"context"
 	"flag"
+	"fmt"
 	"os"
 
 	opv1 "github.com/operator-framework/api/pkg/operators/v1"
 	"go.uber.org/zap/zapcore"
 	v1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -114,6 +120,7 @@ func main() {
 		Log:                          ctrl.Log.WithName("controllers").WithName("ManagedFusion"),
 		Scheme:                       mgr.GetScheme(),
 		Namespace:                    namespace,
+		AvailableCRDs:                mapCRDAvailability(controllers.EgressFirewallCRD, controllers.EgressNetworkPolicyCRD),
 		CustomerNotificationHTMLPath: "templates/customernotification.html",
 	}).SetupWithManager(mgr, nil); err != nil {
 		setupLog.Error(err, "Unable to create controller", "controller", "ManagedFusion")
@@ -149,6 +156,35 @@ func getUnrestrictedClient() client.Client {
 		os.Exit(1)
 	}
 	return k8sClient
+}
+
+func mapCRDAvailability(crdNames ...string) map[string]bool {
+
+	var options client.Options
+	options.Scheme = runtime.NewScheme()
+	utilruntime.Must(apiextensionsv1.AddToScheme(options.Scheme))
+
+	k8sClient, err := client.New(config.GetConfigOrDie(), options)
+	if err != nil {
+		setupLog.Error(err, "error creating client")
+		os.Exit(1)
+	}
+
+	CRDExist := map[string]bool{}
+
+	for _, crdName := range crdNames {
+		crd := apiextensionsv1.CustomResourceDefinition{}
+		err = k8sClient.Get(context.Background(), types.NamespacedName{Name: crdName}, &crd)
+
+		if err != nil && !errors.IsNotFound(err) {
+			setupLog.Error(err, fmt.Sprintf("Error Getting CRD for %s", crdName))
+			os.Exit(1)
+		}
+
+		CRDExist[crdName] = crd.UID != ""
+	}
+
+	return CRDExist
 }
 
 // This function is a placeholder for offering plugin integration

@@ -49,6 +49,9 @@ import (
 )
 
 const (
+	EgressFirewallCRD      = "egressfirewalls.k8s.ovn.org"
+	EgressNetworkPolicyCRD = "egressnetworkpolicies.network.openshift.io"
+
 	managedFusionFinalizer           = "managedfusion.ibm.com/finalizer"
 	managedFusionSecretName          = "managed-fusion-agent-config"
 	prometheusName                   = "managed-fusion-prometheus"
@@ -73,6 +76,9 @@ type ManagedFusionReconciler struct {
 	Log                          logr.Logger
 	Scheme                       *runtime.Scheme
 	Namespace                    string
+	AvailableCRDs                map[string]bool
+	CustomerNotificationHTMLPath string
+
 	ctx                          context.Context
 	prometheus                   *promv1.Prometheus
 	prometheusKubeRBACConfigMap  *corev1.ConfigMap
@@ -86,7 +92,6 @@ type ManagedFusionReconciler struct {
 	managedFusionSecret          *corev1.Secret
 	smtpConfigData               *smtpConfig
 	pagerDutyConfigData          *pagerDutyConfig
-	CustomerNotificationHTMLPath string
 }
 
 type smtpConfig struct {
