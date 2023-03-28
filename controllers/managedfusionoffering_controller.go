@@ -281,10 +281,7 @@ func pluginIsReadyToBeRemoved(reconciler *ManagedFusionOfferingReconciler, offer
 
 // This function is a placeholder for offering plugin integration
 func pluginReconcile(reconciler *ManagedFusionOfferingReconciler, offering *v1alpha1.ManagedFusionOffering) (ctrl.Result, error) {
-	if err := dfReconcile(reconciler, offering); err != nil {
-		return ctrl.Result{}, err
-	}
-	return ctrl.Result{}, nil
+	return dfReconcile(reconciler, offering)
 }
 
 // This function is a placeholder for offering plugin integration

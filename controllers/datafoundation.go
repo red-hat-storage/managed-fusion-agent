@@ -1,3 +1,17 @@
+/*
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 package controllers
 
 import (
@@ -5,16 +19,20 @@ import (
 	"math"
 	"strconv"
 	"strings"
+	"time"
 
 	opv1a1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
 	v1alpha1 "github.com/red-hat-storage/managed-fusion-agent/api/v1alpha1"
 	"github.com/red-hat-storage/managed-fusion-agent/datafoundation"
 	ocsv1 "github.com/red-hat-storage/ocs-operator/api/v1"
+	ocsv1alpha1 "github.com/red-hat-storage/ocs-operator/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	netv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
+	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
@@ -23,6 +41,7 @@ import (
 const (
 	defaultDeviceSetName = "default"
 	ocsOperatorName      = "ocs-operator"
+	storageClusterName   = "ocs-storagecluster"
 )
 
 type dataFoundationSpec struct {
@@ -33,18 +52,19 @@ type dataFoundationSpec struct {
 type dataFoundationReconciler struct {
 	*ManagedFusionOfferingReconciler
 
-	dfName                         string
-	dfNamespace                    string
+	offering                       *v1alpha1.ManagedFusionOffering
 	spec                           dataFoundationSpec
-	onboardingValidationKeySecret  *corev1.Secret
-	storageCluster                 *ocsv1.StorageCluster
-	cephIngressNetworkPolicy       *netv1.NetworkPolicy
-	providerAPIServerNetworkPolicy *netv1.NetworkPolicy
-	rookConfigMap                  *corev1.ConfigMap
-	ocsInitialization              *ocsv1.OCSInitialization
+	onboardingValidationKeySecret  corev1.Secret
+	storageCluster                 ocsv1.StorageCluster
+	cephIngressNetworkPolicy       netv1.NetworkPolicy
+	providerAPIServerNetworkPolicy netv1.NetworkPolicy
+	rookConfigMap                  corev1.ConfigMap
+	ocsInitialization              ocsv1.OCSInitialization
 }
 
 //+kubebuilder:rbac:groups=ocs.openshift.io,namespace=system,resources=storageclusters,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=ocs.openshift.io,namespace=system,resources=ocsinitializations,verbs=get;list;watch;update;patch
+//+kubebuilder:rbac:groups=ocs.openshift.io,namespace=system,resources=storageconsumers,verbs=get;list
 //+kubebuilder:rbac:groups=network.openshift.io,resources=ingressnetworkpolicies,verbs=create;get;list;watch;update
 //+kubebuilder:rbac:groups=operators.coreos.com,namespace=system,resources=clusterserviceversions,verbs=get;list;watch;delete;update;patch
 //+kubebuilder:rbac:groups=ocs.openshift.io,namespace=system,resources=ocsinitializations,verbs=get;list;watch;update;patch;delete
@@ -71,74 +91,96 @@ func DFAddToScheme(scheme *runtime.Scheme) {
 }
 
 func dfIsReadyToBeRemoved(r *ManagedFusionOfferingReconciler, offering *v1alpha1.ManagedFusionOffering) (bool, error) {
-	return true, nil
+	sc := &ocsv1.StorageCluster{}
+	sc.Name = storageClusterName
+	sc.Namespace = offering.Namespace
+
+	if err := r.get(sc); err != nil {
+		if errors.IsNotFound(err) {
+			return true, nil
+		} else {
+			return false, err
+		}
+	} else {
+		return false, nil
+	}
 }
 
-func dfReconcile(offeringReconciler *ManagedFusionOfferingReconciler, offering *v1alpha1.ManagedFusionOffering) error {
+func dfReconcile(offeringReconciler *ManagedFusionOfferingReconciler, offering *v1alpha1.ManagedFusionOffering) (ctrl.Result, error) {
+	// Set up the datafoundation sub-reconciler
 	r := dataFoundationReconciler{}
 	r.initReconciler(offeringReconciler, offering)
 
+	// parse and validate the offering configuration spec
 	if err := r.parseSpec(offering); err != nil {
-		return err
-	}
-	if err := r.reconcileOnboardingValidationSecret(); err != nil {
-		return err
-	}
-	if err := r.reconcileStorageCluster(); err != nil {
-		return err
-	}
-	if err := r.reconcileCSV(); err != nil {
-		return err
-	}
-	if err := r.reconcileCephIngressNetworkPolicy(); err != nil {
-		return err
-	}
-	if err := r.reconcileProviderAPIServerNetworkPolicy(); err != nil {
-		return err
-	}
-	if err := r.reconcileRookCephOperatorConfig(); err != nil {
-		return err
-	}
-	if err := r.reconcileOCSInitialization(); err != nil {
-		return err
+		return ctrl.Result{}, err
 	}
 
-	return nil
+	// Reconcile based on desired state
+	return r.reconcilePhases()
 }
 
 func (r *dataFoundationReconciler) initReconciler(reconciler *ManagedFusionOfferingReconciler, offering *v1alpha1.ManagedFusionOffering) {
 	r.ManagedFusionOfferingReconciler = reconciler
+	r.offering = offering
 
-	r.dfName = offering.Name
-	r.dfNamespace = offering.Namespace
-
-	r.onboardingValidationKeySecret = &corev1.Secret{}
 	r.onboardingValidationKeySecret.Name = "onboarding-ticket-key"
 	r.onboardingValidationKeySecret.Namespace = offering.Namespace
 
-	r.storageCluster = &ocsv1.StorageCluster{}
-	r.storageCluster.Name = "ocs-storagecluster"
+	r.storageCluster.Name = storageClusterName
 	r.storageCluster.Namespace = offering.Namespace
 
-	r.cephIngressNetworkPolicy = &netv1.NetworkPolicy{}
 	r.cephIngressNetworkPolicy.Name = "ceph-ingress-rule"
 	r.cephIngressNetworkPolicy.Namespace = offering.Namespace
 
-	r.providerAPIServerNetworkPolicy = &netv1.NetworkPolicy{}
 	r.providerAPIServerNetworkPolicy.Name = "provider-api-server-rule"
 	r.providerAPIServerNetworkPolicy.Namespace = offering.Namespace
 
-	r.rookConfigMap = &corev1.ConfigMap{}
 	r.rookConfigMap.Name = "rook-ceph-operator-config"
 	r.rookConfigMap.Namespace = offering.Namespace
 
-	r.providerAPIServerNetworkPolicy = &netv1.NetworkPolicy{}
 	r.providerAPIServerNetworkPolicy.Name = "provider-api-server-rule"
 	r.providerAPIServerNetworkPolicy.Namespace = offering.Namespace
 
-	r.ocsInitialization = &ocsv1.OCSInitialization{}
 	r.ocsInitialization.Name = "ocsinit"
 	r.ocsInitialization.Namespace = offering.Namespace
+}
+
+func (r *dataFoundationReconciler) reconcilePhases() (ctrl.Result, error) {
+	if !r.offering.DeletionTimestamp.IsZero() {
+		storageConsumerList := ocsv1alpha1.StorageConsumerList{}
+		if err := r.list(&storageConsumerList, client.Limit(1)); err != nil {
+			return ctrl.Result{}, fmt.Errorf("unable to list OCS StorageConsumers CRs, %v", err)
+		}
+		if len(storageConsumerList.Items) > 0 {
+			r.Log.Info("Found OCS storage consumers, cannot proceed with uninstallation")
+			return ctrl.Result{Requeue: true, RequeueAfter: 10 * time.Second}, nil
+		}
+	} else {
+		if err := r.reconcileOnboardingValidationSecret(); err != nil {
+			return ctrl.Result{}, err
+		}
+		if err := r.reconcileStorageCluster(); err != nil {
+			return ctrl.Result{}, err
+		}
+		if err := r.reconcileCSV(); err != nil {
+			return ctrl.Result{}, err
+		}
+		if err := r.reconcileCephIngressNetworkPolicy(); err != nil {
+			return ctrl.Result{}, err
+		}
+		if err := r.reconcileProviderAPIServerNetworkPolicy(); err != nil {
+			return ctrl.Result{}, err
+		}
+		if err := r.reconcileRookCephOperatorConfig(); err != nil {
+			return ctrl.Result{}, err
+		}
+		if err := r.reconcileOCSInitialization(); err != nil {
+			return ctrl.Result{}, err
+		}
+	}
+
+	return ctrl.Result{}, nil
 }
 
 func (r *dataFoundationReconciler) parseSpec(offering *v1alpha1.ManagedFusionOffering) error {
@@ -187,8 +229,8 @@ func (r *dataFoundationReconciler) parseSpec(offering *v1alpha1.ManagedFusionOff
 func (r *dataFoundationReconciler) reconcileOnboardingValidationSecret() error {
 	r.Log.Info("Reconciling onboardingValidationKey secret")
 
-	_, err := r.CreateOrUpdate(r.onboardingValidationKeySecret, func() error {
-		if err := r.own(r.onboardingValidationKeySecret, true); err != nil {
+	_, err := r.CreateOrUpdate(&r.onboardingValidationKeySecret, func() error {
+		if err := r.own(&r.onboardingValidationKeySecret, true); err != nil {
 			return err
 		}
 		onboardingValidationData := fmt.Sprintf(
@@ -209,8 +251,8 @@ func (r *dataFoundationReconciler) reconcileOnboardingValidationSecret() error {
 func (r *dataFoundationReconciler) reconcileStorageCluster() error {
 	r.Log.Info("Reconciling StorageCluster")
 
-	_, err := r.CreateOrUpdate(r.storageCluster, func() error {
-		if err := r.own(r.storageCluster, true); err != nil {
+	_, err := r.CreateOrUpdate(&r.storageCluster, func() error {
+		if err := r.own(&r.storageCluster, true); err != nil {
 			return err
 		}
 
@@ -293,8 +335,8 @@ func (r *dataFoundationReconciler) reconcileCSV() error {
 }
 
 func (r *dataFoundationReconciler) reconcileCephIngressNetworkPolicy() error {
-	_, err := r.CreateOrUpdate(r.cephIngressNetworkPolicy, func() error {
-		if err := r.own(r.cephIngressNetworkPolicy, true); err != nil {
+	_, err := r.CreateOrUpdate(&r.cephIngressNetworkPolicy, func() error {
+		if err := r.own(&r.cephIngressNetworkPolicy, true); err != nil {
 			return err
 		}
 		desired := datafoundation.CephNetworkPolicyTemplate.DeepCopy()
@@ -308,8 +350,8 @@ func (r *dataFoundationReconciler) reconcileCephIngressNetworkPolicy() error {
 }
 
 func (r *dataFoundationReconciler) reconcileProviderAPIServerNetworkPolicy() error {
-	_, err := r.CreateOrUpdate(r.providerAPIServerNetworkPolicy, func() error {
-		if err := r.own(r.providerAPIServerNetworkPolicy, true); err != nil {
+	_, err := r.CreateOrUpdate(&r.providerAPIServerNetworkPolicy, func() error {
+		if err := r.own(&r.providerAPIServerNetworkPolicy, true); err != nil {
 			return err
 		}
 		desired := datafoundation.ProviderApiServerNetworkPolicyTemplate.DeepCopy()
@@ -324,7 +366,7 @@ func (r *dataFoundationReconciler) reconcileProviderAPIServerNetworkPolicy() err
 }
 
 func (r *dataFoundationReconciler) reconcileRookCephOperatorConfig() error {
-	if err := r.get(r.rookConfigMap); err != nil {
+	if err := r.get(&r.rookConfigMap); err != nil {
 		return fmt.Errorf("failed to get Rook ConfigMap: %v", err)
 	}
 
@@ -347,8 +389,8 @@ func (r *dataFoundationReconciler) reconcileRookCephOperatorConfig() error {
 func (r *dataFoundationReconciler) reconcileOCSInitialization() error {
 	r.Log.Info("Reconciling OCSInitialization")
 
-	err := r.GetAndUpdate(r.ocsInitialization, func() error {
-		if err := r.own(r.ocsInitialization, false); err != nil {
+	err := r.GetAndUpdate(&r.ocsInitialization, func() error {
+		if err := r.own(&r.ocsInitialization, false); err != nil {
 			return fmt.Errorf("unable to set ownerRef on ocs initialization CR: %v", err)
 		}
 		r.ocsInitialization.Spec.EnableCephTools = true
