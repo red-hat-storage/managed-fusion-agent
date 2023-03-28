@@ -51,8 +51,29 @@ func Remove(slice []string, s string) (result []string) {
 	return
 }
 
+func MapItems(source []string, transform func(string) string) []string {
+	target := make([]string, len(source))
+	for i := 0; i < len(source); i += 1 {
+		target[i] = transform(source[i])
+	}
+	return target
+}
+
+func Retry(attempts int, sleep time.Duration, f func() error) error {
+	var err error
+	for i := 0; i < attempts; i++ {
+		if err = f(); err == nil {
+			return nil
+		}
+		time.Sleep(sleep)
+		log.Println("retrying after error:", err)
+	}
+	return fmt.Errorf("Failed after %d retries. Last error: %v", attempts, err)
+
+}
+
 // AddLabel add a label to a resource metadata
-func AddLabel(obj metav1.Object, key string, value string) {
+func AddLabel(obj client.Object, key string, value string) {
 	labels := obj.GetLabels()
 	if labels == nil {
 		labels = map[string]string{}
@@ -61,17 +82,31 @@ func AddLabel(obj metav1.Object, key string, value string) {
 	labels[key] = value
 }
 
-func AddAnnotation(obj metav1.Object, key string, value string) bool {
+func AddAnnotation(obj client.Object, key string, value string) {
 	annotations := obj.GetAnnotations()
 	if annotations == nil {
-		annotations = map[string]string{}
+		annotations = make(map[string]string)
 		obj.SetAnnotations(annotations)
 	}
-	if curr, found := annotations[key]; !found || curr != value {
-		annotations[key] = value
+	annotations[key] = value
+}
+
+func AddFinalizer(obj client.Object, finalizer string) bool {
+	if !Contains(obj.GetFinalizers(), finalizer) {
+		obj.SetFinalizers(append(obj.GetFinalizers(), finalizer))
 		return true
+	} else {
+		return false
 	}
-	return false
+}
+
+func RemoveFinalizer(obj client.Object, finalizer string) bool {
+	if Contains(obj.GetFinalizers(), finalizer) {
+		obj.SetFinalizers(Remove(obj.GetFinalizers(), finalizer))
+		return true
+	} else {
+		return false
+	}
 }
 
 func AddOwnerReference(owner, res client.Object, scheme *runtime.Scheme, isController bool) error {
@@ -106,25 +141,18 @@ func AddOwnerReference(owner, res client.Object, scheme *runtime.Scheme, isContr
 	return nil
 }
 
-func MapItems(source []string, transform func(string) string) []string {
-	target := make([]string, len(source))
-	for i := 0; i < len(source); i += 1 {
-		target[i] = transform(source[i])
+func DeploymentNameFromPodName(podName string) (string, error) {
+	//Pod names created from deployments follow the convention:
+	// <deployment_name>-<pod-template-hash>-<uid>
+	// Therefore, we can get the deployment_name by omitting the last hyphened two sections
+	var i int
+	if i = strings.LastIndex(podName, "-"); i == -1 {
+		return "", fmt.Errorf("invalid pod name")
 	}
-	return target
-}
-
-func Retry(attempts int, sleep time.Duration, f func() error) error {
-	var err error
-	for i := 0; i < attempts; i++ {
-		if err = f(); err == nil {
-			return nil
-		}
-		time.Sleep(sleep)
-		log.Println("retrying after error:", err)
+	if i = strings.LastIndex(podName[0:i], "-"); i == -1 {
+		return "", fmt.Errorf("invalid pod name")
 	}
-	return fmt.Errorf("Failed after %d retries. Last error: %v", attempts, err)
-
+	return podName[0:i], nil
 }
 
 func HTTPGetAndParseBody(endpoint string) (string, error) {
@@ -139,18 +167,4 @@ func HTTPGetAndParseBody(endpoint string) (string, error) {
 		return "", fmt.Errorf("Failed to read response body: %v", err)
 	}
 	return string(body), nil
-}
-
-func DeploymentNameFromPodName(podName string) (string, error) {
-	//Pod names created from deployments follow the convention:
-	// <deployment_name>-<pod-template-hash>-<uid>
-	// Therefore, we can get the deployment_name by omitting the last hyphened two sections
-	var i int
-	if i = strings.LastIndex(podName, "-"); i == -1 {
-		return "", fmt.Errorf("invalid pod name")
-	}
-	if i = strings.LastIndex(podName[0:i], "-"); i == -1 {
-		return "", fmt.Errorf("invalid pod name")
-	}
-	return podName[0:i], nil
 }

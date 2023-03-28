@@ -396,14 +396,9 @@ var _ = Describe("ManagedFusion controller", func() {
 		})
 		When("All uninstall conditions are met", func() {
 			It("should delete the managedFusion secret", func() {
-				Expect(k8sClient.Delete(ctx, managedFusionAgentSecretTemplate.DeepCopy())).Should(Succeed())
-
 				agentSecret := managedFusionAgentSecretTemplate.DeepCopy()
-				key := utils.GetResourceKey((agentSecret))
-				Eventually(func() bool {
-					err := k8sClient.Get(ctx, key, agentSecret)
-					return err != nil && errors.IsNotFound(err)
-				}, timeout, interval).Should(BeTrue())
+				Expect(k8sClient.Delete(ctx, agentSecret)).Should(Succeed())
+				utils.WaitForResourceToDelete(k8sClient, ctx, agentSecret, timeout, interval)
 			})
 		})
 	})

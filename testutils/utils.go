@@ -25,6 +25,15 @@ func WaitForResource(k8sClient client.Client, ctx context.Context, obj client.Ob
 	}, timeout, interval).Should(BeTrue())
 }
 
+func WaitForResourceToDelete(k8sClient client.Client, ctx context.Context, obj client.Object, timeout time.Duration, interval time.Duration) {
+	key := client.ObjectKeyFromObject(obj)
+
+	EventuallyWithOffset(1, func() bool {
+		err := k8sClient.Get(ctx, key, obj)
+		return err != nil && errors.IsNotFound(err)
+	}, timeout, interval).Should(BeTrue())
+}
+
 func EnsureNoResource(k8sClient client.Client, ctx context.Context, obj client.Object, timeout time.Duration, interval time.Duration) {
 	key := client.ObjectKeyFromObject(obj)
 

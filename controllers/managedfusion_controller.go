@@ -46,6 +46,7 @@ import (
 	ovnv1 "github.com/ovn-org/ovn-kubernetes/go-controller/pkg/crd/egressfirewall/v1"
 	promv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	promv1a1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1alpha1"
+	v1alpha1 "github.com/red-hat-storage/managed-fusion-agent/api/v1alpha1"
 	"github.com/red-hat-storage/managed-fusion-agent/templates"
 	"github.com/red-hat-storage/managed-fusion-agent/utils"
 	netv1 "k8s.io/api/networking/v1"
@@ -55,7 +56,7 @@ const (
 	EgressFirewallCRD      = "egressfirewalls.k8s.ovn.org"
 	EgressNetworkPolicyCRD = "egressnetworkpolicies.network.openshift.io"
 
-	managedFusionFinalizer           = "managedfusion.ibm.com/finalizer"
+	managedFusionFinalizer           = "misf.ibm.com/finalizer"
 	managedFusionSecretName          = "managed-fusion-agent-config"
 	prometheusName                   = "managed-fusion-prometheus"
 	prometheusServiceName            = "prometheus"
@@ -299,26 +300,38 @@ func (r *ManagedFusionReconciler) initReconciler(ctx context.Context, req ctrl.R
 
 func (r *ManagedFusionReconciler) reconcilePhases() (reconcile.Result, error) {
 	if !r.managedFusionSecret.DeletionTimestamp.IsZero() {
-		if r.verifyOfferringsDoNotExist() {
-			r.Log.Info(fmt.Sprintf("removing finalizer from %s secret", managedFusionSecretName))
-			r.managedFusionSecret.SetFinalizers(utils.Remove(r.managedFusionSecret.GetFinalizers(), managedFusionFinalizer))
-			if err := r.Client.Update(r.ctx, r.managedFusionSecret); err != nil {
-				return ctrl.Result{}, fmt.Errorf("failed to remove finalizer from %s secret: %v", managedFusionSecretName, err)
+		r.Log.Info("Managed Fusion configuration Secret is marked for deletion, checking for ManagedFusionOfferings CRs on the cluster")
+		if found, err := r.checkForManagedOfferings(); err != nil {
+			return ctrl.Result{}, err
+		} else if found {
+			r.Log.Info("ManagedFusionOffering CRs found, issuing delete")
+			offering := v1alpha1.ManagedFusionOffering{}
+			if err := r.deleteAllOf(&offering); err != nil {
+				return ctrl.Result{}, fmt.Errorf("failed to issue delete for one or more ManagedFusionOffering CRs, %v", err)
+			} else {
+				r.Log.Info("ManagedFusionOffering CRs delete issued, requeuing the event")
+				return ctrl.Result{RequeueAfter: 10}, nil
 			}
-			r.Log.Info("finallizer removed successfully")
-
+		} else {
+			r.Log.Info(fmt.Sprintf("No offering found, removing finalizer from %s secret", managedFusionSecretName))
+			if removed := utils.RemoveFinalizer(r.managedFusionSecret, managedFusionFinalizer); removed {
+				if err := r.update(r.managedFusionSecret); err != nil {
+					return ctrl.Result{}, fmt.Errorf("failed to remove finalizer from %s secret: %v", managedFusionSecretName, err)
+				}
+				r.Log.Info(fmt.Sprintf("Removing finallizer from %s secret completed successfuly", managedFusionSecretName))
+			}
 			if err := r.initiateAgentUninstallation(); err != nil {
 				return ctrl.Result{}, fmt.Errorf("failed to initiate agent uninstallation %v", err)
 			}
 		}
 
 	} else if r.managedFusionSecret.UID != "" {
-		if !utils.Contains(r.managedFusionSecret.GetFinalizers(), managedFusionFinalizer) {
+		if added := utils.AddFinalizer(r.managedFusionSecret, managedFusionFinalizer); added {
 			r.Log.V(-1).Info(fmt.Sprintf("finalizer missing on the %s secret resource, adding...", managedFusionSecretName))
-			r.managedFusionSecret.SetFinalizers(append(r.managedFusionSecret.GetFinalizers(), managedFusionFinalizer))
 			if err := r.update(r.managedFusionSecret); err != nil {
 				return ctrl.Result{}, fmt.Errorf("failed to update %s secret with finalizer: %v", managedFusionSecretName, err)
 			}
+			r.Log.Info(fmt.Sprintf("Adding finallizer to %s secret completed successfuly", managedFusionSecretName))
 		}
 
 		if err := r.reconcileAlertRelabelConfigSecret(); err != nil {
@@ -364,8 +377,12 @@ func (r *ManagedFusionReconciler) reconcilePhases() (reconcile.Result, error) {
 }
 
 // TODO Add logic to check if the offerings exists
-func (r *ManagedFusionReconciler) verifyOfferringsDoNotExist() bool {
-	return true
+func (r *ManagedFusionReconciler) checkForManagedOfferings() (bool, error) {
+	offerings := v1alpha1.ManagedFusionOfferingList{}
+	if err := r.list(&offerings, client.Limit(1)); err != nil {
+		return false, fmt.Errorf("error listing ManagedFusionOffering CRs, %v", err)
+	}
+	return len(offerings.Items) > 0, nil
 }
 
 func (r *ManagedFusionReconciler) reconcilePrometheus() error {
@@ -383,7 +400,7 @@ func (r *ManagedFusionReconciler) reconcilePrometheus() error {
 		// for prometheus kube-rbac-proxy sidecar
 		agentCSV, err := r.getCSVByPrefix(agentCSVPrefix)
 		if err != nil {
-			return fmt.Errorf("Unable to set image for kube-rbac-proxy container: %v", err)
+			return fmt.Errorf("unable to set image for kube-rbac-proxy container: %v", err)
 		}
 
 		agentCSVDeployments := agentCSV.Spec.InstallStrategy.StrategySpec.DeploymentSpecs
@@ -431,7 +448,7 @@ func (r *ManagedFusionReconciler) reconcilePrometheus() error {
 		return nil
 	})
 	if err != nil {
-		return fmt.Errorf("Failed to update Prometheus: %v", err)
+		return fmt.Errorf("failed to update Prometheus: %v", err)
 	}
 
 	return nil
@@ -468,10 +485,10 @@ func (r *ManagedFusionReconciler) reconcileAlertmanagerSecret() error {
 			return err
 		}
 		if r.pagerDutyConfigData.ServiceKey == "" {
-			return fmt.Errorf("Agent PagerDuty configuration does not contain serviceKey entry")
+			return fmt.Errorf("agent PagerDuty configuration does not contain serviceKey entry")
 		}
 		if r.smtpConfigData.Password == "" {
-			return fmt.Errorf("Agent SMTP configuration does not contain password entry")
+			return fmt.Errorf("agent SMTP configuration does not contain password entry")
 		}
 		r.alertmanagerSecret.Data = map[string][]byte{
 			amSecretPagerDutyServiceKeyKey: []byte(r.pagerDutyConfigData.ServiceKey),
@@ -492,16 +509,16 @@ func (r *ManagedFusionReconciler) reconcileAlertmanagerConfig() error {
 		}
 
 		if r.pagerDutyConfigData.SOPEndpoint == "" {
-			return fmt.Errorf("Agent PagerDuty configuration does not contain sopEndpoint entry")
+			return fmt.Errorf("agent PagerDuty configuration does not contain sopEndpoint entry")
 		}
 		if r.smtpConfigData.Username == "" {
-			return fmt.Errorf("Agent SMTP configuration does not contain username entry")
+			return fmt.Errorf("agent SMTP configuration does not contain username entry")
 		}
 		if r.smtpConfigData.Endpoint == "" {
-			return fmt.Errorf("Agent SMTP configuration does not contain endpoint entry")
+			return fmt.Errorf("agent SMTP configuration does not contain endpoint entry")
 		}
 		if r.smtpConfigData.FromAddress == "" {
-			return fmt.Errorf("Agent SMTP configuration does not contain fromAddress entry")
+			return fmt.Errorf("agent SMTP configuration does not contain fromAddress entry")
 		}
 		alertingAddressList := []string{}
 		alertingAddressList = append(alertingAddressList,
@@ -577,7 +594,7 @@ func (r *ManagedFusionReconciler) reconcileAlertRelabelConfigSecret() error {
 
 		config, err := yaml.Marshal(alertRelabelConfig)
 		if err != nil {
-			return fmt.Errorf("Unable to encode alert relabel conifg: %v", err)
+			return fmt.Errorf("unable to encode alert relabel conifg: %v", err)
 		}
 
 		r.alertRelabelConfigSecret.Data = map[string][]byte{
@@ -588,7 +605,7 @@ func (r *ManagedFusionReconciler) reconcileAlertRelabelConfigSecret() error {
 	})
 
 	if err != nil {
-		return fmt.Errorf("Unable to create/update AlertRelabelConfigSecret: %v", err)
+		return fmt.Errorf("unable to create/update AlertRelabelConfigSecret: %v", err)
 	}
 
 	return nil
@@ -665,7 +682,7 @@ func (r *ManagedFusionReconciler) reconcileK8SMetricsServiceMonitor() error {
 		return nil
 	})
 	if err != nil {
-		return fmt.Errorf("Failed to update k8sMetricsServiceMonitor: %v", err)
+		return fmt.Errorf("failed to update k8sMetricsServiceMonitor: %v", err)
 	}
 	return nil
 }
@@ -679,7 +696,7 @@ func (r *ManagedFusionReconciler) reconcileMonitoringResources() error {
 
 	podMonitorList := promv1.PodMonitorList{}
 	if err := r.list(&podMonitorList); err != nil {
-		return fmt.Errorf("Could not list pod monitors: %v", err)
+		return fmt.Errorf("could not list pod monitors: %v", err)
 	}
 	for i := range podMonitorList.Items {
 		obj := podMonitorList.Items[i]
@@ -691,7 +708,7 @@ func (r *ManagedFusionReconciler) reconcileMonitoringResources() error {
 
 	serviceMonitorList := promv1.ServiceMonitorList{}
 	if err := r.list(&serviceMonitorList); err != nil {
-		return fmt.Errorf("Could not list service monitors: %v", err)
+		return fmt.Errorf("could not list service monitors: %v", err)
 	}
 	for i := range serviceMonitorList.Items {
 		obj := serviceMonitorList.Items[i]
@@ -703,7 +720,7 @@ func (r *ManagedFusionReconciler) reconcileMonitoringResources() error {
 
 	promRuleList := promv1.PrometheusRuleList{}
 	if err := r.list(&promRuleList); err != nil {
-		return fmt.Errorf("Could not list prometheus rules: %v", err)
+		return fmt.Errorf("could not list prometheus rules: %v", err)
 	}
 	for i := range promRuleList.Items {
 		obj := promRuleList.Items[i]
@@ -727,7 +744,7 @@ func (r *ManagedFusionReconciler) reconcilePrometheusProxyNetworkPolicy() error 
 		return nil
 	})
 	if err != nil {
-		return fmt.Errorf("Failed to update prometheus proxy NetworkPolicy: %v", err)
+		return fmt.Errorf("failed to update prometheus proxy NetworkPolicy: %v", err)
 	}
 	return nil
 }
@@ -892,9 +909,8 @@ func (r *ManagedFusionReconciler) get(obj client.Object) error {
 	return r.Client.Get(r.ctx, key, obj)
 }
 
-func (r *ManagedFusionReconciler) list(obj client.ObjectList) error {
-	listOptions := client.InNamespace(r.Namespace)
-	return r.Client.List(r.ctx, obj, listOptions)
+func (r *ManagedFusionReconciler) list(obj client.ObjectList, listOptions ...client.ListOption) error {
+	return r.Client.List(r.ctx, obj, listOptions...)
 }
 
 func (r *ManagedFusionReconciler) update(obj client.Object) error {
@@ -908,6 +924,10 @@ func (r *ManagedFusionReconciler) delete(obj client.Object) error {
 	return nil
 }
 
+func (r *ManagedFusionReconciler) deleteAllOf(obj client.Object) error {
+	return r.Client.DeleteAllOf(r.ctx, obj)
+}
+
 func (r *ManagedFusionReconciler) own(resource metav1.Object) error {
 	// Ensure ManangedFusion secret ownership on a resource
 	if err := ctrl.SetControllerReference(r.managedFusionSecret, resource, r.Scheme); err != nil {
@@ -918,7 +938,7 @@ func (r *ManagedFusionReconciler) own(resource metav1.Object) error {
 
 func (r *ManagedFusionReconciler) getCSVByPrefix(name string) (*opv1a1.ClusterServiceVersion, error) {
 	csvList := opv1a1.ClusterServiceVersionList{}
-	if err := r.list(&csvList); err != nil {
+	if err := r.list(&csvList, client.InNamespace(r.Namespace)); err != nil {
 		return nil, fmt.Errorf("unable to list csv resources: %v", err)
 	}
 
