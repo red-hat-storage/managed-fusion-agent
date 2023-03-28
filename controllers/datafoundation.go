@@ -41,11 +41,13 @@ type dataFoundationReconciler struct {
 	cephIngressNetworkPolicy       *netv1.NetworkPolicy
 	providerAPIServerNetworkPolicy *netv1.NetworkPolicy
 	rookConfigMap                  *corev1.ConfigMap
+	ocsInitialization              *ocsv1.OCSInitialization
 }
 
 //+kubebuilder:rbac:groups=ocs.openshift.io,namespace=system,resources=storageclusters,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=network.openshift.io,resources=ingressnetworkpolicies,verbs=create;get;list;watch;update
 //+kubebuilder:rbac:groups=operators.coreos.com,namespace=system,resources=clusterserviceversions,verbs=get;list;watch;delete;update;patch
+//+kubebuilder:rbac:groups=ocs.openshift.io,namespace=system,resources=ocsinitializations,verbs=get;list;watch;update;patch
 
 func dfSetupWatches(controllerBuilder *builder.Builder) {
 	csvPredicates := builder.WithPredicates(
@@ -60,7 +62,8 @@ func dfSetupWatches(controllerBuilder *builder.Builder) {
 		Owns(&ocsv1.StorageCluster{}).
 		Owns(&netv1.NetworkPolicy{}).
 		Owns(&corev1.ConfigMap{}).
-		Owns(&opv1a1.ClusterServiceVersion{}, csvPredicates)
+		Owns(&opv1a1.ClusterServiceVersion{}, csvPredicates).
+		Owns(&ocsv1.OCSInitialization{})
 }
 
 func DFAddToScheme(scheme *runtime.Scheme) {
@@ -90,6 +93,9 @@ func dfReconcile(offeringReconciler *ManagedFusionOfferingReconciler, offering *
 		return err
 	}
 	if err := r.reconcileRookCephOperatorConfig(); err != nil {
+		return err
+	}
+	if err := r.reconcileOCSInitialization(); err != nil {
 		return err
 	}
 
@@ -125,6 +131,10 @@ func (r *dataFoundationReconciler) initReconciler(reconciler *ManagedFusionOffer
 	r.providerAPIServerNetworkPolicy = &netv1.NetworkPolicy{}
 	r.providerAPIServerNetworkPolicy.Name = "provider-api-server-rule"
 	r.providerAPIServerNetworkPolicy.Namespace = offering.Namespace
+
+	r.ocsInitialization = &ocsv1.OCSInitialization{}
+	r.ocsInitialization.Name = "ocsinit"
+	r.ocsInitialization.Namespace = offering.Namespace
 }
 
 func (r *dataFoundationReconciler) parseSpec(offering *v1alpha1.ManagedFusionOffering) error {
@@ -325,6 +335,23 @@ func (r *dataFoundationReconciler) reconcileRookCephOperatorConfig() error {
 		if err := r.update(cloneRookConfigMap); err != nil {
 			return fmt.Errorf("Failed to update Rook ConfigMap: %v", err)
 		}
+	}
+
+	return nil
+}
+
+func (r *dataFoundationReconciler) reconcileOCSInitialization() error {
+	r.Log.Info("Reconciling OCSInitialization")
+
+	err := r.GetAndUpdate(r.ocsInitialization, func() error {
+		if err := r.own(r.ocsInitialization, false); err != nil {
+			return fmt.Errorf("unable to set ownerRef on ocs initialization CR: %v", err)
+		}
+		r.ocsInitialization.Spec.EnableCephTools = true
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("failed to update OCS initialization CR: %v", err)
 	}
 
 	return nil
