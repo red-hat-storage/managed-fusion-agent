@@ -45,7 +45,7 @@ const (
 
 // ManagedFusionOfferingReconciler reconciles a ManagedFusionOffering object
 type ManagedFusionOfferingReconciler struct {
-	client.Client
+	Client client.Client
 	Log    logr.Logger
 	Scheme *runtime.Scheme
 
@@ -81,15 +81,11 @@ func (r *ManagedFusionOfferingReconciler) Reconcile(ctx context.Context, req ctr
 	r.initReconciler(ctx, req)
 
 	if err := r.get(r.managedFusionOffering); err != nil {
-		return ctrl.Result{}, fmt.Errorf("Unable to get managedFusionOffering: %v", err)
+		return ctrl.Result{}, fmt.Errorf("unable to get managedFusionOffering: %v", err)
 	}
 
 	if result, err := r.reconcilePhases(); err != nil {
 		return result, fmt.Errorf("an error was encountered during reconcilePhases: %v", err)
-	}
-
-	if result, err := pluginReconcile(r, r.managedFusionOffering); err != nil {
-		return ctrl.Result{}, fmt.Errorf("An error was encountered during reconcile: %v", err)
 	} else {
 		return result, nil
 	}
@@ -117,16 +113,48 @@ func (r *ManagedFusionOfferingReconciler) initReconciler(ctx context.Context, re
 }
 
 func (r *ManagedFusionOfferingReconciler) reconcilePhases() (reconcile.Result, error) {
+	if !r.managedFusionOffering.DeletionTimestamp.IsZero() {
+		if ready, err := pluginIsReadyToBeRemoved(r, r.managedFusionOffering); err != nil {
+			return ctrl.Result{}, fmt.Errorf(
+				"failed to validate if %s (%s) can be removed %v",
+				r.managedFusionOffering.Name,
+				r.managedFusionOffering.Namespace,
+				err,
+			)
 
-	if err := r.reconcileOperatorGroup(); err != nil {
-		return ctrl.Result{}, err
+		} else if ready {
+			if removed := utils.RemoveFinalizer(r.managedFusionOffering, managedFusionFinalizer); removed {
+				r.Log.Info(fmt.Sprintf("removing finalizer from %s secret", managedFusionSecretName))
+				if err := r.update(r.managedFusionOffering); err != nil {
+					return ctrl.Result{}, fmt.Errorf("failed to remove finalizer from %s secret: %v", managedFusionSecretName, err)
+				}
+			}
+		}
+	} else if r.managedFusionOffering.UID != "" {
+		if added := utils.AddFinalizer(r.managedFusionOffering, managedFusionFinalizer); added {
+			r.Log.V(-1).Info(fmt.Sprintf("finalizer missing on the %s secret resource, adding...", managedFusionSecretName))
+			if err := r.update(r.managedFusionOffering); err != nil {
+				return ctrl.Result{}, fmt.Errorf("failed to update %s secret with finalizer: %v", managedFusionSecretName, err)
+			}
+		}
+
+		if err := r.reconcileOperatorGroup(); err != nil {
+			return ctrl.Result{}, err
+		}
+		if err := r.reconcileCatalogSource(); err != nil {
+			return ctrl.Result{}, err
+		}
+		if err := r.reconcileSubscription(); err != nil {
+			return ctrl.Result{}, err
+		}
+
+		if result, err := pluginReconcile(r, r.managedFusionOffering); err != nil {
+			return ctrl.Result{}, fmt.Errorf("an error was encountered during reconcile: %v", err)
+		} else {
+			return result, nil
+		}
 	}
-	if err := r.reconcileCatalogSource(); err != nil {
-		return ctrl.Result{}, err
-	}
-	if err := r.reconcileSubscription(); err != nil {
-		return ctrl.Result{}, err
-	}
+
 	return ctrl.Result{}, nil
 }
 
@@ -246,6 +274,10 @@ func (r *ManagedFusionOfferingReconciler) getCSVByPrefix(name string) (*opv1a1.C
 }
 
 // All the below functions are placeholder for offering plugin integration
+
+func pluginIsReadyToBeRemoved(reconciler *ManagedFusionOfferingReconciler, offering *v1alpha1.ManagedFusionOffering) (bool, error) {
+	return dfIsReadyToBeRemoved(reconciler, offering)
+}
 
 // This function is a placeholder for offering plugin integration
 func pluginReconcile(reconciler *ManagedFusionOfferingReconciler, offering *v1alpha1.ManagedFusionOffering) (ctrl.Result, error) {

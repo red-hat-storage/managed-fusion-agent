@@ -70,6 +70,10 @@ func DFAddToScheme(scheme *runtime.Scheme) {
 	utilruntime.Must(ocsv1.AddToScheme(scheme))
 }
 
+func dfIsReadyToBeRemoved(r *ManagedFusionOfferingReconciler, offering *v1alpha1.ManagedFusionOffering) (bool, error) {
+	return true, nil
+}
+
 func dfReconcile(offeringReconciler *ManagedFusionOfferingReconciler, offering *v1alpha1.ManagedFusionOffering) error {
 	r := dataFoundationReconciler{}
 	r.initReconciler(offeringReconciler, offering)
@@ -298,7 +302,7 @@ func (r *dataFoundationReconciler) reconcileCephIngressNetworkPolicy() error {
 		return nil
 	})
 	if err != nil {
-		return fmt.Errorf("Failed to update ceph ingress NetworkPolicy: %v", err)
+		return fmt.Errorf("failed to update ceph ingress NetworkPolicy: %v", err)
 	}
 	return nil
 }
@@ -313,7 +317,7 @@ func (r *dataFoundationReconciler) reconcileProviderAPIServerNetworkPolicy() err
 		return nil
 	})
 	if err != nil {
-		return fmt.Errorf("Failed to update provider api server NetworkPolicy: %v", err)
+		return fmt.Errorf("failed to update provider api server NetworkPolicy: %v", err)
 	}
 
 	return nil
@@ -321,7 +325,7 @@ func (r *dataFoundationReconciler) reconcileProviderAPIServerNetworkPolicy() err
 
 func (r *dataFoundationReconciler) reconcileRookCephOperatorConfig() error {
 	if err := r.get(r.rookConfigMap); err != nil {
-		return fmt.Errorf("Failed to get Rook ConfigMap: %v", err)
+		return fmt.Errorf("failed to get Rook ConfigMap: %v", err)
 	}
 
 	cloneRookConfigMap := r.rookConfigMap.DeepCopy()
@@ -333,7 +337,7 @@ func (r *dataFoundationReconciler) reconcileRookCephOperatorConfig() error {
 	cloneRookConfigMap.Data["ROOK_CSI_ENABLE_RBD"] = "false"
 	if !equality.Semantic.DeepEqual(r.rookConfigMap, cloneRookConfigMap) {
 		if err := r.update(cloneRookConfigMap); err != nil {
-			return fmt.Errorf("Failed to update Rook ConfigMap: %v", err)
+			return fmt.Errorf("failed to update Rook ConfigMap: %v", err)
 		}
 	}
 
