@@ -42,6 +42,7 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 	openshiftv1 "github.com/openshift/api/network/v1"
 	operators "github.com/operator-framework/api/pkg/operators/v1alpha1"
+	ovnv1 "github.com/ovn-org/ovn-kubernetes/go-controller/pkg/crd/egressfirewall/v1"
 	promv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	promv1a1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1alpha1"
 	misfv1a1 "github.com/red-hat-storage/managed-fusion-agent/api/v1alpha1"
@@ -53,6 +54,8 @@ var (
 	scheme   = runtime.NewScheme()
 	setupLog = ctrl.Log.WithName("setup")
 )
+
+//+kubebuilder:rbac:groups=apiextensions.k8s.io,resources=customresourcedefinitions,verbs=get;watch;list
 
 func init() {
 
@@ -81,6 +84,8 @@ func addAllSchemes(scheme *runtime.Scheme) {
 	utilruntime.Must(misfv1a1.AddToScheme(scheme))
 
 	utilruntime.Must(opv1.AddToScheme(scheme))
+
+	utilruntime.Must(ovnv1.AddToScheme(scheme))
 	// +kubebuilder:scaffold:scheme
 
 	pluginAddToScheme(scheme)
