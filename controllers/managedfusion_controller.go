@@ -130,6 +130,8 @@ type pagerDutyConfig struct {
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=create;get;list;watch;update
 // +kubebuilder:rbac:groups="",resources=namespaces,verbs=get;list;watch;delete
 // +kubebuilder:rbac:groups="config.openshift.io",resources=clusterversions,verbs=get;watch;list
+// +kubebuilder:rbac:groups=k8s.ovn.org,namespace=system,resources=egressfirewalls,verbs=create;get;list;watch;update
+// +kubebuilder:rbac:groups=network.openshift.io,namespace=system,resources=egressnetworkpolicies,verbs=create;get;list;watch;update
 
 // SetupWithManager creates an setup a ManagedFusion to work with the provided manager
 func (r *ManagedFusionReconciler) SetupWithManager(mgr ctrl.Manager, ctrlOptions *controller.Options) error {
@@ -508,6 +510,13 @@ func (r *ManagedFusionReconciler) reconcileAlertmanagerConfig() error {
 		if err != nil {
 			return fmt.Errorf("unable to read customernotification.html file: %v", err)
 		}
+		smtpURL, err := url.ParseRequestURI(r.smtpConfigData.Endpoint)
+		if err != nil {
+			return fmt.Errorf("unable to parse SMTP Endpoint url: %v", err)
+		}
+		if smtpURL.Host == "" {
+			return fmt.Errorf("cannot retrieve host from %s, might be a malformed or partial URL", r.smtpConfigData.Endpoint)
+		}
 
 		desired := templates.AlertmanagerConfigTemplate.DeepCopy()
 		for i := range desired.Spec.Receivers {
@@ -520,7 +529,7 @@ func (r *ManagedFusionReconciler) reconcileAlertmanagerConfig() error {
 				receiver.PagerDutyConfigs[0].Details[0].Value = r.pagerDutyConfigData.SOPEndpoint
 			case "SendGrid":
 				if len(alertingAddressList) > 0 {
-					receiver.EmailConfigs[0].Smarthost = r.smtpConfigData.Endpoint
+					receiver.EmailConfigs[0].Smarthost = smtpURL.Host
 					receiver.EmailConfigs[0].AuthUsername = r.smtpConfigData.Username
 					receiver.EmailConfigs[0].AuthPassword.LocalObjectReference.Name = r.alertmanagerSecret.Name
 					receiver.EmailConfigs[0].AuthPassword.Key = amSecretSMTPAuthPasswordKey
@@ -817,7 +826,7 @@ func (r *ManagedFusionReconciler) getEgressFirewallDesiredState() (*ovnv1.Egress
 		return nil, fmt.Errorf("unable to parse SMTP Endpoint url: %v", err)
 	}
 	if smtpURL.Hostname() == "" {
-		return nil, fmt.Errorf("smtp config does not contain a host entry")
+		return nil, fmt.Errorf("cannot retrieve hostname from %s, might be a malformed or partial URL", r.smtpConfigData.Endpoint)
 	}
 
 	smtpEgressRule := ovnv1.EgressFirewallRule{}
