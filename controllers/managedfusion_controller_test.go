@@ -17,6 +17,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
+const (
+	testSMTPEndpoint = "https://smtp.sendgrid.net:587"
+)
+
 var _ = Describe("ManagedFusion controller", func() {
 	// Define utility constants for object names and testing timeouts/durations and intervals.
 	const (
@@ -93,7 +97,7 @@ var _ = Describe("ManagedFusion controller", func() {
 			smtpData.Password = ""
 		}
 		if hasSMTPConfig {
-			smtpData.Endpoint = "smtp.sendgrid.net:587"
+			smtpData.Endpoint = testSMTPEndpoint
 			smtpData.FromAddress = "noreply-test@test.com"
 			smtpData.Username = "test"
 			smtpData.NotificationEmails = []string{"test@test.com"}
@@ -270,7 +274,7 @@ var _ = Describe("ManagedFusion controller", func() {
 
 				// Update notification email in addon param secret
 				smtpData := smtpConfig{
-					Endpoint:           "smtp.sendgrid.net:587",
+					Endpoint:           testSMTPEndpoint,
 					FromAddress:        "noreply-test@test.com",
 					Username:           "test",
 					NotificationEmails: []string{"test-new@email.com"},
@@ -302,7 +306,7 @@ var _ = Describe("ManagedFusion controller", func() {
 
 				// Update notification email in addon param secret
 				smtpData := smtpConfig{
-					Endpoint:           "smtp.sendgrid.net:587",
+					Endpoint:           testSMTPEndpoint,
 					FromAddress:        "noreply-test@test.com",
 					Username:           "test",
 					NotificationEmails: []string{"test-0@email.com", "test-1@email.com"},
@@ -334,7 +338,7 @@ var _ = Describe("ManagedFusion controller", func() {
 
 				// remove notification email from addon param secret
 				smtpData := smtpConfig{
-					Endpoint:           "smtp.sendgrid.net:587",
+					Endpoint:           testSMTPEndpoint,
 					FromAddress:        "noreply-test@test.com",
 					Username:           "test",
 					NotificationEmails: []string{"test-0@email.com"},
@@ -366,7 +370,7 @@ var _ = Describe("ManagedFusion controller", func() {
 
 				// remove notification email from addon param secret
 				smtpData := smtpConfig{
-					Endpoint:           "smtp.sendgrid.net:587",
+					Endpoint:           testSMTPEndpoint,
 					FromAddress:        "noreply-test@test.com",
 					Username:           "test",
 					NotificationEmails: []string{},

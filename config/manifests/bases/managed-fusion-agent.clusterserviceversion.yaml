@@ -11,7 +11,14 @@ metadata:
   namespace: placeholder
 spec:
   apiservicedefinitions: {}
-  customresourcedefinitions: {}
+  customresourcedefinitions:
+    owned:
+    - description: ManagedFusionOffering is the Schema for the managedfusionofferings
+        API
+      displayName: Managed Fusion Offering
+      kind: ManagedFusionOffering
+      name: managedfusionofferings.misf.ibm.com
+      version: v1alpha1
   description: A Kubernetes operator designed to be running on both Fusion providers
     and customers’ application clusters,fulfilling the task of handling Fusion software
     deployment, Fusion software lifecycle management, observability, and the establishing
