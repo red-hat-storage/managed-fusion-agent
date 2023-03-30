@@ -22,8 +22,10 @@ import (
 	"time"
 
 	opv1a1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
+	promv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	v1alpha1 "github.com/red-hat-storage/managed-fusion-agent/api/v1alpha1"
 	"github.com/red-hat-storage/managed-fusion-agent/datafoundation"
+	"github.com/red-hat-storage/managed-fusion-agent/utils"
 	ocsv1 "github.com/red-hat-storage/ocs-operator/api/v1"
 	ocsv1alpha1 "github.com/red-hat-storage/ocs-operator/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
@@ -161,6 +163,9 @@ func (r *dataFoundationReconciler) reconcilePhases() (ctrl.Result, error) {
 			return ctrl.Result{}, err
 		}
 		if err := r.reconcileStorageCluster(); err != nil {
+			return ctrl.Result{}, err
+		}
+		if err := r.reconcileMonitoringResources(); err != nil {
 			return ctrl.Result{}, err
 		}
 		if err := r.reconcileCSV(); err != nil {
@@ -304,6 +309,53 @@ func (r *dataFoundationReconciler) setDeviceSetCount(deviceSet *ocsv1.StorageDev
 		r.Log.V(-1).Info("Requested storage device set count will result in downscaling, which is not supported. Skipping")
 		deviceSet.Count = currDeviceSetCount
 	}
+}
+
+// reconcileMonitoringResources labels all monitoring resources (ServiceMonitors, PodMonitors, and PrometheusRules)
+// found in the target namespace with a label that matches the label selector the defined on the Prometheus resource
+// we are reconciling in reconcilePrometheus. Doing so instructs the Prometheus instance to notice and react to these labeled
+// monitoring resources
+func (r *dataFoundationReconciler) reconcileMonitoringResources() error {
+	r.Log.Info("reconciling monitoring resources")
+	inNamespace := client.InNamespace(r.offering.Namespace)
+
+	podMonitorList := promv1.PodMonitorList{}
+	if err := r.list(&podMonitorList, inNamespace); err != nil {
+		return fmt.Errorf("could not list pod monitors: %v", err)
+	}
+	for i := range podMonitorList.Items {
+		obj := podMonitorList.Items[i]
+		utils.AddLabel(obj, monLabelKey, monLabelValue)
+		if err := r.update(obj); err != nil {
+			return err
+		}
+	}
+
+	serviceMonitorList := promv1.ServiceMonitorList{}
+	if err := r.list(&serviceMonitorList, inNamespace); err != nil {
+		return fmt.Errorf("could not list service monitors: %v", err)
+	}
+	for i := range serviceMonitorList.Items {
+		obj := serviceMonitorList.Items[i]
+		utils.AddLabel(obj, monLabelKey, monLabelValue)
+		if err := r.update(obj); err != nil {
+			return err
+		}
+	}
+
+	promRuleList := promv1.PrometheusRuleList{}
+	if err := r.list(&promRuleList, inNamespace); err != nil {
+		return fmt.Errorf("could not list prometheus rules: %v", err)
+	}
+	for i := range promRuleList.Items {
+		obj := promRuleList.Items[i]
+		utils.AddLabel(obj, monLabelKey, monLabelValue)
+		if err := r.update(obj); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func (r *dataFoundationReconciler) reconcileCSV() error {
