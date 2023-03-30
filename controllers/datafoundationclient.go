@@ -17,7 +17,7 @@ type dataFoundationClientReconciler struct {
 	dataFoundationClientSpec dataFoundationClientSpec
 }
 
-func dfCSetupWatches(controllerBuilder *builder.Builder) {}
+func dfcSetupWatches(controllerBuilder *builder.Builder) {}
 
 func DFCAddToScheme(scheme *runtime.Scheme) {
 }
@@ -26,7 +26,7 @@ func dfcReconcile(offeringReconciler *ManagedFusionOfferingReconciler, offering 
 	return nil
 }
 
-func (r *dataFoundationClientReconciler) initReconciler(offeringReconciler *ManagedFusionOfferingReconciler) {
+func (r *dataFoundationClientReconciler) initReconciler(offeringReconciler *ManagedFusionOfferingReconciler, offering *v1alpha1.ManagedFusionOffering) {
 }
 
 func (r *dataFoundationClientReconciler) parseSpec(offering *v1alpha1.ManagedFusionOffering) error {

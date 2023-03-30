@@ -195,4 +195,5 @@ func mapCRDAvailability(crdNames ...string) map[string]bool {
 // This function is a placeholder for offering plugin integration
 func pluginAddToScheme(scheme *runtime.Scheme) {
 	controllers.DFAddToScheme(scheme)
+	controllers.DFCAddToScheme(scheme)
 }
