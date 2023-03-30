@@ -320,12 +320,19 @@ func pluginIsReadyToBeRemoved(reconciler *ManagedFusionOfferingReconciler, offer
 
 // This function is a placeholder for offering plugin integration
 func pluginReconcile(reconciler *ManagedFusionOfferingReconciler, offering *v1alpha1.ManagedFusionOffering) (ctrl.Result, error) {
-	return dfReconcile(reconciler, offering)
+	switch offering.Spec.Kind {
+	case v1alpha1.KindDataFoundation:
+		return dfReconcile(reconciler, offering)
+	case v1alpha1.KindDataFoundationClient:
+		return dfcReconcile(reconciler, offering)
+	}
+	return ctrl.Result{}, nil
 }
 
 // This function is a placeholder for offering plugin integration
 func pluginSetupWatches(controllerBuilder *builder.Builder) {
 	dfSetupWatches(controllerBuilder)
+	dfcSetupWatches(controllerBuilder)
 }
 
 // This function is a placeholder for offering plugin integration
@@ -344,14 +351,25 @@ func pluginGetDesiredCatalogSourceSpec(r *ManagedFusionOfferingReconciler) opv1a
 
 // This function is a placeholder for offering plugin integration
 func pluginGetDesiredSubscriptionSpec(r *ManagedFusionOfferingReconciler) *opv1a1.SubscriptionSpec {
-	return &opv1a1.SubscriptionSpec{
-		Channel: "stable-4.12",
-		Package: "ocs-operator",
-		Config: opv1a1.SubscriptionConfig{
-			Env: []corev1.EnvVar{{
-				Name:  "SKIP_NOOBAA_CRD_WATCH",
-				Value: "true",
-			}},
-		},
+	var desiredSubscription *opv1a1.SubscriptionSpec
+	switch r.managedFusionOffering.Spec.Kind {
+	case v1alpha1.KindDataFoundation:
+		desiredSubscription = &opv1a1.SubscriptionSpec{
+			Channel: "stable-4.12",
+			Package: "ocs-operator",
+			Config: opv1a1.SubscriptionConfig{
+				Env: []corev1.EnvVar{{
+					Name:  "SKIP_NOOBAA_CRD_WATCH",
+					Value: "true",
+				}},
+			},
+		}
+	case v1alpha1.KindDataFoundationClient:
+		desiredSubscription = &opv1a1.SubscriptionSpec{
+			Channel: "stable-4.12",
+			Package: "ocs-client-operator",
+		}
 	}
+
+	return desiredSubscription
 }
