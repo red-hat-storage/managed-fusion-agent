@@ -356,9 +356,6 @@ func (r *ManagedFusionReconciler) reconcilePhases() (reconcile.Result, error) {
 		if err := r.reconcileK8SMetricsServiceMonitor(); err != nil {
 			return ctrl.Result{}, err
 		}
-		if err := r.reconcileMonitoringResources(); err != nil {
-			return ctrl.Result{}, err
-		}
 		if err := r.reconcilePrometheusProxyNetworkPolicy(); err != nil {
 			return ctrl.Result{}, err
 		}
@@ -685,51 +682,6 @@ func (r *ManagedFusionReconciler) reconcileK8SMetricsServiceMonitor() error {
 	return nil
 }
 
-// reconcileMonitoringResources labels all monitoring resources (ServiceMonitors, PodMonitors, and PrometheusRules)
-// found in the target namespace with a label that matches the label selector the defined on the Prometheus resource
-// we are reconciling in reconcilePrometheus. Doing so instructs the Prometheus instance to notice and react to these labeled
-// monitoring resources
-func (r *ManagedFusionReconciler) reconcileMonitoringResources() error {
-	r.Log.Info("reconciling monitoring resources")
-
-	podMonitorList := promv1.PodMonitorList{}
-	if err := r.list(&podMonitorList); err != nil {
-		return fmt.Errorf("could not list pod monitors: %v", err)
-	}
-	for i := range podMonitorList.Items {
-		obj := podMonitorList.Items[i]
-		utils.AddLabel(obj, monLabelKey, monLabelValue)
-		if err := r.update(obj); err != nil {
-			return err
-		}
-	}
-
-	serviceMonitorList := promv1.ServiceMonitorList{}
-	if err := r.list(&serviceMonitorList); err != nil {
-		return fmt.Errorf("could not list service monitors: %v", err)
-	}
-	for i := range serviceMonitorList.Items {
-		obj := serviceMonitorList.Items[i]
-		utils.AddLabel(obj, monLabelKey, monLabelValue)
-		if err := r.update(obj); err != nil {
-			return err
-		}
-	}
-
-	promRuleList := promv1.PrometheusRuleList{}
-	if err := r.list(&promRuleList); err != nil {
-		return fmt.Errorf("could not list prometheus rules: %v", err)
-	}
-	for i := range promRuleList.Items {
-		obj := promRuleList.Items[i]
-		utils.AddLabel(obj, monLabelKey, monLabelValue)
-		if err := r.update(obj); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
 func (r *ManagedFusionReconciler) reconcilePrometheusProxyNetworkPolicy() error {
 	r.Log.Info("reconciling PrometheusProxyNetworkPolicy resources")
 
