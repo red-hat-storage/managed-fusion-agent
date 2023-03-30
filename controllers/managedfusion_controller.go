@@ -1,6 +1,4 @@
 /*
-
-
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
@@ -19,8 +17,8 @@ package controllers
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
 	"net/url"
+	"os"
 	"strings"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -523,7 +521,7 @@ func (r *ManagedFusionReconciler) reconcileAlertmanagerConfig() error {
 		alertingAddressList := []string{}
 		alertingAddressList = append(alertingAddressList,
 			r.smtpConfigData.NotificationEmails...)
-		smtpHTML, err := ioutil.ReadFile(r.CustomerNotificationHTMLPath)
+		smtpHTML, err := os.ReadFile(r.CustomerNotificationHTMLPath)
 		if err != nil {
 			return fmt.Errorf("unable to read customernotification.html file: %v", err)
 		}
