@@ -118,6 +118,7 @@ require (
 
 replace (
 	github.com/go-logr/logr => github.com/go-logr/logr v0.4.0
+	github.com/go-logr/zapr => github.com/go-logr/zapr v0.4.0
 	github.com/kubernetes-incubator/external-storage => github.com/libopenstorage/external-storage v0.20.4-openstorage-rc3
 	github.com/onsi/gomega => github.com/onsi/gomega v1.17.0
 	github.com/openshift/api => github.com/openshift/api v0.0.0-20201203102015-275406142edb // required for Quickstart CRD
@@ -153,7 +154,6 @@ replace (
 	k8s.io/mount-utils => k8s.io/mount-utils v0.21.3
 	k8s.io/sample-apiserver => k8s.io/sample-apiserver v0.21.3
 	sigs.k8s.io/controller-runtime => sigs.k8s.io/controller-runtime v0.9.5
-	github.com/go-logr/zapr => github.com/go-logr/zapr v0.4.0
 )
 
 exclude github.com/kubernetes-incubator/external-storage v0.20.4-openstorage-rc2
