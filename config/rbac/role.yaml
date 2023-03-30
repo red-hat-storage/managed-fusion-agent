@@ -264,6 +264,13 @@ rules:
   - update
   - watch
 - apiGroups:
+  - ocs.openshift.io
+  resources:
+  - storageconsumers
+  verbs:
+  - get
+  - list
+- apiGroups:
   - operators.coreos.com
   resources:
   - clusterserviceversions
