@@ -23,6 +23,8 @@ func DFCAddToScheme(scheme *runtime.Scheme) {
 }
 
 func dfcReconcile(offeringReconciler *ManagedFusionOfferingReconciler, offering *v1alpha1.ManagedFusionOffering) error {
+	r := dataFoundationClientReconciler{}
+	r.initReconciler(offeringReconciler, offering)
 	return nil
 }
 
