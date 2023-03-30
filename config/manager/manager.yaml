@@ -26,6 +26,11 @@ spec:
       labels:
         control-plane: controller-manager
     spec:
+      initContainers:
+      - name: crd-creator
+        image: controller:latest
+        command:
+        - /crdCreator
       containers:
       - command:
         - /manager
