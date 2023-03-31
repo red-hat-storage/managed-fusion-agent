@@ -41,6 +41,7 @@ func main() {
 		"noobaas.noobaa.io.yaml",
 		"objectbucketclaims.objectbucket.io.yaml",
 		"objectbuckets.objectbucket.io.yaml",
+		"storageclients.ocs.openshift.io.yaml",
 	}
 
 	for _, f := range crdFiles {
