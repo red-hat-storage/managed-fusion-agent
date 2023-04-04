@@ -10,8 +10,8 @@ require (
 	github.com/operator-framework/api v0.16.0
 	github.com/ovn-org/ovn-kubernetes/go-controller v0.0.0-20220816173647-d4b5f1ab78e4
 	github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring v0.58.0
-	github.com/red-hat-storage/ocs-operator v0.4.12
 	github.com/red-hat-storage/ocs-client-operator v0.0.0-20230330142600-a324e157e2eb
+	github.com/red-hat-storage/ocs-operator v0.4.12
 	github.com/rook/rook v1.10.0
 	go.uber.org/zap v1.24.0
 	gopkg.in/yaml.v2 v2.4.0

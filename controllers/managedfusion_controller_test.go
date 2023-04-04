@@ -80,6 +80,7 @@ var _ = Describe("ManagedFusion controller", func() {
 		hasSMTPConfig bool,
 		hasPagerKey bool,
 		hasSMTPPassword bool,
+		hasRemoteWriteConfigData bool,
 	) {
 		managedFusionAgentSecret := managedFusionAgentSecretTemplate.DeepCopy()
 		var managedFusionAgentSecretExists bool
@@ -121,6 +122,12 @@ var _ = Describe("ManagedFusion controller", func() {
 			smtpData.Username = ""
 			smtpData.NotificationEmails = []string{}
 		}
+		remoteWriteConfigData := remoteWriteConfig{}
+		if hasRemoteWriteConfigData {
+			remoteWriteConfigData.BearerToken = "test-remote-write-key"
+		} else {
+			remoteWriteConfigData.BearerToken = ""
+		}
 		pdYAMLData, _ := yaml.Marshal(&pagerDutyData)
 		managedFusionAgentSecret.Data["pager_duty_config"] = pdYAMLData
 		smtpYAMLData, _ := yaml.Marshal(&smtpData)
@@ -130,6 +137,8 @@ var _ = Describe("ManagedFusion controller", func() {
 		} else {
 			Expect(k8sClient.Create(ctx, managedFusionAgentSecret)).Should(Succeed())
 		}
+		remoteWriteYAMLData, _ := yaml.Marshal(&remoteWriteConfigData)
+		managedFusionAgentSecret.Data["remote_write_config"] = remoteWriteYAMLData
 	}
 	// Valid secret structure - correct smtp and pager duty keys and data
 	// Invalid secret structure - incorrect smtp and pager duty keys and data
@@ -172,7 +181,7 @@ var _ = Describe("ManagedFusion controller", func() {
 		When("there is a valid managedFusionAgent Secret in the cluster", func() {
 			It("should create reconciled resources", func() {
 				// Create a valid add-on parameters secret but with empty values
-				setupManagedFusionSecretConditions(false, false, false, false)
+				setupManagedFusionSecretConditions(false, false, false, false, false)
 
 				By("Creating a prometheus resource")
 				utils.WaitForResource(k8sClient, ctx, promTemplate.DeepCopy(), timeout, interval)
@@ -241,7 +250,7 @@ var _ = Describe("ManagedFusion controller", func() {
 		})
 		When("there is no value for pagerKey in the managedFusion secret", func() {
 			It("should not create alertmanager config", func() {
-				setupManagedFusionSecretConditions(true, true, false, true)
+				setupManagedFusionSecretConditions(true, true, false, true, true)
 
 				// Ensure, over a period of time, that the resources are not created
 				utils.EnsureNoResource(k8sClient, ctx, amConfigSecretTemplate.DeepCopy(), timeout, interval)
@@ -249,7 +258,7 @@ var _ = Describe("ManagedFusion controller", func() {
 		})
 		When("there is no SMTP password in managedFusion secret", func() {
 			It("should not create alertmanager config", func() {
-				setupManagedFusionSecretConditions(true, true, true, false)
+				setupManagedFusionSecretConditions(true, true, true, false, true)
 
 				// Ensure, over a period of time, that the resources are not created
 				utils.EnsureNoResource(k8sClient, ctx, amConfigSecretTemplate.DeepCopy(), timeout, interval)
@@ -257,7 +266,7 @@ var _ = Describe("ManagedFusion controller", func() {
 		})
 		When("there is no pagerduty config in the managedFusion secret", func() {
 			It("should not create alertmanager config", func() {
-				setupManagedFusionSecretConditions(false, true, true, true)
+				setupManagedFusionSecretConditions(false, true, true, true, true)
 
 				// Ensure, over a period of time, that the resources are not created
 				utils.EnsureNoResource(k8sClient, ctx, amConfigTemplate.DeepCopy(), timeout, interval)
@@ -265,7 +274,7 @@ var _ = Describe("ManagedFusion controller", func() {
 		})
 		When("there is no smtp config in the managedFusion secret", func() {
 			It("should not create alertmanager config", func() {
-				setupManagedFusionSecretConditions(true, false, true, true)
+				setupManagedFusionSecretConditions(true, false, true, true, true)
 
 				// Ensure, over a period of time, that the resources are not created
 				utils.EnsureNoResource(k8sClient, ctx, amConfigTemplate.DeepCopy(), timeout, interval)
@@ -274,7 +283,7 @@ var _ = Describe("ManagedFusion controller", func() {
 		})
 		When("All conditions for creating an alertmanager config are met", func() {
 			It("should create alertmanager config", func() {
-				setupManagedFusionSecretConditions(true, true, true, true)
+				setupManagedFusionSecretConditions(true, true, true, true, true)
 
 				utils.WaitForResource(k8sClient, ctx, amConfigSecretTemplate.DeepCopy(), timeout, interval)
 				utils.WaitForResource(k8sClient, ctx, amConfigTemplate.DeepCopy(), timeout, interval)
