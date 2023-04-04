@@ -3,13 +3,17 @@ package controllers
 import (
 	"fmt"
 	"net/url"
+	"strings"
 
+	opv1a1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
 	v1alpha1 "github.com/red-hat-storage/managed-fusion-agent/api/v1alpha1"
 	ocsclient "github.com/red-hat-storage/ocs-client-operator/api/v1alpha1"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 )
 
 type dataFoundationClientSpec struct {
@@ -25,10 +29,23 @@ type dataFoundationClientReconciler struct {
 	storageClient            ocsclient.StorageClient
 }
 
-//+kubebuilder:rbac:groups=ocs.openshift.io,namespace=system,resources=storageclients,verbs=get;list;watch;create;update;patch;delete
+const (
+	ocsClientOperatorName = "ocs-client-operator"
+)
+
+//+kubebuilder:rbac:groups=ocs.openshift.io,resources=storageclients,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=operators.coreos.com,namespace=system,resources=clusterserviceversions,verbs=get;list;watch;delete;update;patch
 
 func dfcSetupWatches(controllerBuilder *builder.Builder) {
+	csvPredicates := builder.WithPredicates(
+		predicate.NewPredicateFuncs(
+			func(res client.Object) bool {
+				return strings.HasPrefix(res.GetName(), ocsClientOperatorName)
+			},
+		),
+	)
 	controllerBuilder.
+		Owns(&opv1a1.ClusterServiceVersion{}, csvPredicates).
 		Owns(&ocsclient.StorageClient{})
 }
 
@@ -91,12 +108,16 @@ func (r *dataFoundationClientReconciler) parseSpec(offering *v1alpha1.ManagedFus
 
 func (r *dataFoundationClientReconciler) reconcilePhases() (ctrl.Result, error) {
 	if !r.offering.DeletionTimestamp.IsZero() {
+		return ctrl.Result{}, nil
 	} else {
+		if err := r.reconcileCSV(); err != nil {
+			return ctrl.Result{}, err
+		}
 		if err := r.reconcileStorageClient(); err != nil {
 			return ctrl.Result{}, err
 		}
+		return ctrl.Result{}, nil
 	}
-	return ctrl.Result{}, nil
 }
 
 func (r *dataFoundationClientReconciler) reconcileStorageClient() error {
@@ -128,6 +149,22 @@ func (r *dataFoundationClientReconciler) reconcileStorageClient() error {
 	})
 	if err != nil {
 		return fmt.Errorf("unable to create/update StorageClient: %v", err)
+	}
+	return nil
+}
+
+func (r *dataFoundationClientReconciler) reconcileCSV() error {
+	r.Log.Info("Reconciling OCS Client Operator CSV")
+
+	csv, err := r.getCSVByPrefix(ocsClientOperatorName)
+	if err != nil {
+		return fmt.Errorf("unable to get OCS client CSV: %v", err)
+	}
+	if err := r.own(csv, false); err != nil {
+		return fmt.Errorf("unable to set owner reference on OCS client CSV : %v", err)
+	}
+	if err := r.update(csv); err != nil {
+		return fmt.Errorf("failed to update OCS client CSV: %v", err)
 	}
 	return nil
 }
