@@ -30,6 +30,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 )
 
+// ToPointer returns address of the variable
+func ToPointer[T any](v T) *T {
+	return &v
+}
+
 // Contains checks whether a string is contained within a slice
 func Contains(slice []string, s string) bool {
 	for _, item := range slice {

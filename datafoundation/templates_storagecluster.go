@@ -15,6 +15,7 @@ package datafoundation
 import (
 	"fmt"
 
+	"github.com/red-hat-storage/managed-fusion-agent/utils"
 	ocsv1 "github.com/red-hat-storage/ocs-operator/api/v1"
 	rook "github.com/rook/rook/pkg/apis/ceph.rook.io/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -25,12 +26,8 @@ import (
 // StorageClusterTemplate is the template that serves as the base for the storage clsuter deployed by the operator
 
 const (
-	OSDSizeInTiB = 4
-)
-
-var (
-	gp2             = "gp2"
-	volumeModeBlock = corev1.PersistentVolumeBlock
+	OSDSizeInTiB            = 4
+	backingStorageClassName = "default-ocs-storage-class"
 )
 
 var commonTSC corev1.TopologySpreadConstraint = corev1.TopologySpreadConstraint{
@@ -79,7 +76,7 @@ var StorageClusterTemplate = ocsv1.StorageCluster{
 		ManageNodes: false,
 		MonPVCTemplate: &corev1.PersistentVolumeClaim{
 			Spec: corev1.PersistentVolumeClaimSpec{
-				StorageClassName: &gp2,
+				StorageClassName: utils.ToPointer("gp3-csi"),
 				Resources: corev1.ResourceRequirements{
 					Requests: corev1.ResourceList{
 						"storage": resource.MustParse("50Gi"),
@@ -96,24 +93,36 @@ var StorageClusterTemplate = ocsv1.StorageCluster{
 			"mon":            GetResourceRequirements("mon"),
 			"crashcollector": GetResourceRequirements("crashcollector"),
 		},
+		BackingStorageClasses: []ocsv1.BackingStorageClass{{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: backingStorageClassName,
+			},
+			Provisioner: "ebs.csi.aws.com",
+			Parameters: map[string]string{
+				"iops":       "12000",
+				"throughput": "250",
+			},
+		}},
 		StorageProfiles: []ocsv1.StorageProfile{{
 			DeviceClass: "ssd",
-			Name:        "default",
+			Name:        "default-storage-profile",
 			BlockPoolConfiguration: ocsv1.BlockPoolConfigurationSpec{
 				Parameters: map[string]string{
-					"pg_autoscale_mode": "on",
+					"pg_autoscale_mode": "off",
 					"pg_num":            "128",
 					"pgp_num":           "128",
+					"target_size_ratio": ".49",
 				},
 			},
 			SharedFilesystemConfiguration: ocsv1.SharedFilesystemConfigurationSpec{
 				Parameters: map[string]string{
-					"pg_autoscale_mode": "on",
-					"pg_num":            "128",
-					"pgp_num":           "128",
+					"pg_autoscale_mode": "off",
+					"pg_num":            "512",
+					"pgp_num":           "512",
 				},
 			},
 		}},
+		DefaultStorageProfile: "default-storage-profile",
 		StorageDeviceSets: []ocsv1.StorageDeviceSet{{
 			Name:        "default",
 			Count:       1,
@@ -121,11 +130,11 @@ var StorageClusterTemplate = ocsv1.StorageCluster{
 			DeviceClass: "ssd",
 			DataPVCTemplate: corev1.PersistentVolumeClaim{
 				Spec: corev1.PersistentVolumeClaimSpec{
-					StorageClassName: &gp2,
+					StorageClassName: utils.ToPointer(backingStorageClassName),
 					AccessModes: []corev1.PersistentVolumeAccessMode{
 						corev1.ReadWriteOnce,
 					},
-					VolumeMode: &volumeModeBlock,
+					VolumeMode: utils.ToPointer(corev1.PersistentVolumeBlock),
 					Resources: corev1.ResourceRequirements{
 						Requests: corev1.ResourceList{
 							"storage": resource.MustParse(fmt.Sprintf("%dTi", OSDSizeInTiB)),
@@ -163,6 +172,5 @@ var StorageClusterTemplate = ocsv1.StorageCluster{
 				DisableSnapshotClass: true,
 			},
 		},
-		DefaultStorageProfile: "default",
 	},
 }
