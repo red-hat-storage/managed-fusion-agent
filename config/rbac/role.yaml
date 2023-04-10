@@ -271,6 +271,7 @@ rules:
   verbs:
   - get
   - list
+  - watch
 - apiGroups:
   - operators.coreos.com
   resources:
