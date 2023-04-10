@@ -131,9 +131,18 @@ func (r *ManagedFusionOfferingReconciler) reconcilePhases() (reconcile.Result, e
 
 		} else if ready {
 			if removed := utils.RemoveFinalizer(r.managedFusionOffering, managedFusionFinalizer); removed {
-				r.Log.Info(fmt.Sprintf("removing finalizer from %s secret", managedFusionSecretName))
+				r.Log.Info(fmt.Sprintf(
+					"removing finalizer from %s (%s)",
+					r.managedFusionOffering.Name,
+					r.managedFusionOffering.Namespace,
+				))
 				if err := r.update(r.managedFusionOffering); err != nil {
-					return ctrl.Result{}, fmt.Errorf("failed to remove finalizer from %s secret: %v", managedFusionSecretName, err)
+					return ctrl.Result{}, fmt.Errorf(
+						"failed to remove finalizer from %s (%s): %v",
+						r.managedFusionOffering.Name,
+						r.managedFusionOffering.Namespace,
+						err,
+					)
 				}
 			}
 			r.Log.Info(fmt.Sprintf("issuing a delete for %s namespace", r.namespace))
@@ -147,9 +156,18 @@ func (r *ManagedFusionOfferingReconciler) reconcilePhases() (reconcile.Result, e
 		}
 	} else if r.managedFusionOffering.UID != "" {
 		if added := utils.AddFinalizer(r.managedFusionOffering, managedFusionFinalizer); added {
-			r.Log.V(-1).Info(fmt.Sprintf("finalizer missing on the %s secret resource, adding...", managedFusionSecretName))
+			r.Log.Info(fmt.Sprintf(
+				"finalizer missing on %s (%s), adding...",
+				r.managedFusionOffering.Name,
+				r.managedFusionOffering.Namespace,
+			))
 			if err := r.update(r.managedFusionOffering); err != nil {
-				return ctrl.Result{}, fmt.Errorf("failed to update %s secret with finalizer: %v", managedFusionSecretName, err)
+				return ctrl.Result{}, fmt.Errorf(
+					"failed to update %s (%s) with finalizer: %v",
+					r.managedFusionOffering.Name,
+					r.managedFusionOffering.Namespace,
+					err,
+				)
 			}
 		}
 
