@@ -347,5 +347,11 @@ func pluginGetDesiredSubscriptionSpec(r *ManagedFusionOfferingReconciler) *opv1a
 	return &opv1a1.SubscriptionSpec{
 		Channel: "stable-4.12",
 		Package: "ocs-operator",
+		Config: opv1a1.SubscriptionConfig{
+			Env: []corev1.EnvVar{{
+				Name:  "SKIP_NOOBAA_CRD_WATCH",
+				Value: "true",
+			}},
+		},
 	}
 }
