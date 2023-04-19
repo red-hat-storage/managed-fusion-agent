@@ -24,9 +24,11 @@ type dataFoundationClientSpec struct {
 type dataFoundationClientReconciler struct {
 	*ManagedFusionOfferingReconciler
 
-	offering                 *v1alpha1.ManagedFusionOffering
-	dataFoundationClientSpec dataFoundationClientSpec
-	storageClient            ocsclient.StorageClient
+	offering                      *v1alpha1.ManagedFusionOffering
+	dataFoundationClientSpec      dataFoundationClientSpec
+	storageClient                 ocsclient.StorageClient
+	defaultBlockStorageClassClaim ocsclient.StorageClassClaim
+	defaultFSStorageClassClaim    ocsclient.StorageClassClaim
 }
 
 const (
@@ -34,6 +36,7 @@ const (
 )
 
 //+kubebuilder:rbac:groups=ocs.openshift.io,resources=storageclients,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=ocs.openshift.io,resources=storageclassclaims,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=operators.coreos.com,namespace=system,resources=clusterserviceversions,verbs=get;list;watch;delete;update;patch
 
 func dfcSetupWatches(controllerBuilder *builder.Builder) {
@@ -46,7 +49,8 @@ func dfcSetupWatches(controllerBuilder *builder.Builder) {
 	)
 	controllerBuilder.
 		Owns(&opv1a1.ClusterServiceVersion{}, csvPredicates).
-		Owns(&ocsclient.StorageClient{})
+		Owns(&ocsclient.StorageClient{}).
+		Owns(&ocsclient.StorageClassClaim{})
 }
 
 func DFCAddToScheme(scheme *runtime.Scheme) {
@@ -69,6 +73,10 @@ func (r *dataFoundationClientReconciler) initReconciler(reconciler *ManagedFusio
 
 	r.storageClient.Name = "ocs-storageclient"
 	r.storageClient.Namespace = offering.Namespace
+
+	r.defaultBlockStorageClassClaim.Name = "ocs-storagecluster-ceph-rbd"
+
+	r.defaultFSStorageClassClaim.Name = "ocs-storagecluster-cephfs"
 }
 
 func (r *dataFoundationClientReconciler) parseSpec(offering *v1alpha1.ManagedFusionOffering) error {
@@ -114,6 +122,12 @@ func (r *dataFoundationClientReconciler) reconcilePhases() (ctrl.Result, error) 
 			return ctrl.Result{}, err
 		}
 		if err := r.reconcileStorageClient(); err != nil {
+			return ctrl.Result{}, err
+		}
+		if err := r.reconcileDefaultBlockStorageClassClaim(); err != nil {
+			return ctrl.Result{}, err
+		}
+		if err := r.reconcileDefaultFSStorageClassClaim(); err != nil {
 			return ctrl.Result{}, err
 		}
 		return ctrl.Result{}, nil
@@ -166,5 +180,40 @@ func (r *dataFoundationClientReconciler) reconcileCSV() error {
 	if err := r.update(csv); err != nil {
 		return fmt.Errorf("failed to update OCS client CSV: %v", err)
 	}
+	return nil
+}
+
+func (r *dataFoundationClientReconciler) reconcileDefaultBlockStorageClassClaim() error {
+	r.Log.Info("Reconciling Default BlockPool StorageClassClaim")
+
+	_, err := r.CreateOrUpdate(&r.defaultBlockStorageClassClaim, func() error {
+		r.defaultBlockStorageClassClaim.Spec.Type = "blockpool"
+		r.defaultBlockStorageClassClaim.Spec.StorageClient = &ocsclient.StorageClientNamespacedName{
+			Name:      r.storageClient.Name,
+			Namespace: r.storageClient.Namespace,
+		}
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("unable to create/update Default blockpool StorageClassClaim: %v", err)
+	}
+	return nil
+}
+
+func (r *dataFoundationClientReconciler) reconcileDefaultFSStorageClassClaim() error {
+	r.Log.Info("Reconciling Default Filesystem StorageClassClaim")
+
+	_, err := r.CreateOrUpdate(&r.defaultFSStorageClassClaim, func() error {
+		r.defaultFSStorageClassClaim.Spec.Type = "sharedfilesystem"
+		r.defaultFSStorageClassClaim.Spec.StorageClient = &ocsclient.StorageClientNamespacedName{
+			Name:      r.storageClient.Name,
+			Namespace: r.storageClient.Namespace,
+		}
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("unable to create/update Default FileSystem StorageClassClaim: %v", err)
+	}
+
 	return nil
 }

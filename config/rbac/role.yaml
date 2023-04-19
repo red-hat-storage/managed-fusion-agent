@@ -191,6 +191,18 @@ rules:
 - apiGroups:
   - ocs.openshift.io
   resources:
+  - storageclassclaims
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - ocs.openshift.io
+  resources:
   - storageclients
   verbs:
   - create
