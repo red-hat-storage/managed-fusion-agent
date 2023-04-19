@@ -12,24 +12,26 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package datafoundation
+package templates
 
 import (
+	corev1 "k8s.io/api/core/v1"
 	netv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
 )
 
-var CephNetworkPolicyTemplate = netv1.NetworkPolicy{
+var ProviderApiServerPort = intstr.FromInt(50051)
+var ProviderApiServerProtocol = corev1.ProtocolTCP
+
+var ProviderApiServerNetworkPolicyTemplate = netv1.NetworkPolicy{
 	Spec: netv1.NetworkPolicySpec{
 		Ingress: []netv1.NetworkPolicyIngressRule{
 			{
-				From: []netv1.NetworkPolicyPeer{
+				Ports: []netv1.NetworkPolicyPort{
 					{
-						NamespaceSelector: &metav1.LabelSelector{
-							MatchLabels: map[string]string{
-								"policy-group.network.openshift.io/host-network": "",
-							},
-						},
+						Port:     &ProviderApiServerPort,
+						Protocol: &ProviderApiServerProtocol,
 					},
 				},
 			},
@@ -43,11 +45,7 @@ var CephNetworkPolicyTemplate = netv1.NetworkPolicy{
 					Key:      "app",
 					Operator: metav1.LabelSelectorOpIn,
 					Values: []string{
-						"rook-ceph-mds",
-						"rook-ceph-osd",
-						"rook-ceph-mgr",
-						"rook-ceph-mon",
-						"rook-ceph-crashcollector",
+						"ocsProviderApiServer",
 					},
 				},
 			},

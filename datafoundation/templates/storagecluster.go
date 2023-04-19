@@ -10,11 +10,12 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package datafoundation
+package templates
 
 import (
 	"fmt"
 
+	df "github.com/red-hat-storage/managed-fusion-agent/datafoundation"
 	"github.com/red-hat-storage/managed-fusion-agent/utils"
 	ocsv1 "github.com/red-hat-storage/ocs-operator/api/v1"
 	rook "github.com/rook/rook/pkg/apis/ceph.rook.io/v1"
@@ -88,10 +89,10 @@ var StorageClusterTemplate = ocsv1.StorageCluster{
 			},
 		},
 		Resources: map[string]corev1.ResourceRequirements{
-			"mds":            GetResourceRequirements("mds"),
-			"mgr":            GetResourceRequirements("mgr"),
-			"mon":            GetResourceRequirements("mon"),
-			"crashcollector": GetResourceRequirements("crashcollector"),
+			"mds":            df.GetResourceRequirements("mds"),
+			"mgr":            df.GetResourceRequirements("mgr"),
+			"mon":            df.GetResourceRequirements("mon"),
+			"crashcollector": df.GetResourceRequirements("crashcollector"),
 		},
 		BackingStorageClasses: []ocsv1.BackingStorageClass{{
 			ObjectMeta: metav1.ObjectMeta{
@@ -155,7 +156,7 @@ var StorageClusterTemplate = ocsv1.StorageCluster{
 				},
 			},
 			Portable:  true,
-			Resources: GetResourceRequirements("sds"),
+			Resources: df.GetResourceRequirements("sds"),
 		}},
 		MultiCloudGateway: &ocsv1.MultiCloudGatewaySpec{
 			ReconcileStrategy: "ignore",
