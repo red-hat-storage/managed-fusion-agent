@@ -66,7 +66,7 @@ type dataFoundationReconciler struct {
 
 //+kubebuilder:rbac:groups=ocs.openshift.io,namespace=system,resources=storageclusters,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=ocs.openshift.io,namespace=system,resources=ocsinitializations,verbs=get;list;watch;update;patch
-//+kubebuilder:rbac:groups=ocs.openshift.io,namespace=system,resources=storageconsumers,verbs=get;list
+//+kubebuilder:rbac:groups=ocs.openshift.io,namespace=system,resources=storageconsumers,verbs=get;list;watch
 //+kubebuilder:rbac:groups=network.openshift.io,resources=ingressnetworkpolicies,verbs=create;get;list;watch;update
 //+kubebuilder:rbac:groups=operators.coreos.com,namespace=system,resources=clusterserviceversions,verbs=get;list;watch;delete;update;patch
 //+kubebuilder:rbac:groups=ocs.openshift.io,namespace=system,resources=ocsinitializations,verbs=get;list;watch;update;patch;delete
@@ -90,6 +90,7 @@ func dfSetupWatches(controllerBuilder *builder.Builder) {
 
 func DFAddToScheme(scheme *runtime.Scheme) {
 	utilruntime.Must(ocsv1.AddToScheme(scheme))
+	utilruntime.Must(ocsv1alpha1.AddToScheme(scheme))
 }
 
 func dfIsReadyToBeRemoved(r *ManagedFusionOfferingReconciler, offering *v1alpha1.ManagedFusionOffering) (bool, error) {
@@ -150,6 +151,14 @@ func (r *dataFoundationReconciler) initReconciler(reconciler *ManagedFusionOffer
 
 func (r *dataFoundationReconciler) reconcilePhases() (ctrl.Result, error) {
 	if !r.offering.DeletionTimestamp.IsZero() {
+		if err := r.get(&r.storageCluster); err != nil {
+			return ctrl.Result{}, fmt.Errorf("unable to get storagecluster: %v", err)
+		}
+		if r.storageCluster.Status.Phase != "Ready" {
+			r.Log.Info("storagecluster is not in ready state, cannot proceed with uninstallation")
+			return ctrl.Result{}, nil
+		}
+
 		storageConsumerList := ocsv1alpha1.StorageConsumerList{}
 		if err := r.list(&storageConsumerList, client.Limit(1)); err != nil {
 			return ctrl.Result{}, fmt.Errorf("unable to list OCS StorageConsumers CRs, %v", err)
@@ -158,6 +167,12 @@ func (r *dataFoundationReconciler) reconcilePhases() (ctrl.Result, error) {
 			r.Log.Info("Found OCS storage consumers, cannot proceed with uninstallation")
 			return ctrl.Result{Requeue: true, RequeueAfter: 10 * time.Second}, nil
 		}
+
+		r.Log.Info("issuing a delete for storagecluster")
+		if err := r.delete(&r.storageCluster); err != nil {
+			return ctrl.Result{}, fmt.Errorf("unable to issue a delete for storagecluster: %v", err)
+		}
+
 	} else {
 		if err := r.reconcileOnboardingValidationSecret(); err != nil {
 			return ctrl.Result{}, err

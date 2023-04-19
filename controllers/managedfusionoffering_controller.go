@@ -26,8 +26,10 @@ import (
 	opv1a1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
 	v1alpha1 "github.com/red-hat-storage/managed-fusion-agent/api/v1alpha1"
 	"github.com/red-hat-storage/managed-fusion-agent/utils"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
@@ -81,7 +83,12 @@ func (r *ManagedFusionOfferingReconciler) Reconcile(ctx context.Context, req ctr
 	r.initReconciler(ctx, req)
 
 	if err := r.get(r.managedFusionOffering); err != nil {
-		return ctrl.Result{}, fmt.Errorf("unable to get managedFusionOffering: %v", err)
+		if errors.IsNotFound(err) {
+			r.Log.V(-1).Info("ManagedFusionOffering resource not found")
+			return ctrl.Result{}, nil
+		} else {
+			return ctrl.Result{}, fmt.Errorf("unable to get managedFusionOffering: %v", err)
+		}
 	}
 
 	if result, err := r.reconcilePhases(); err != nil {
@@ -124,17 +131,43 @@ func (r *ManagedFusionOfferingReconciler) reconcilePhases() (reconcile.Result, e
 
 		} else if ready {
 			if removed := utils.RemoveFinalizer(r.managedFusionOffering, managedFusionFinalizer); removed {
-				r.Log.Info(fmt.Sprintf("removing finalizer from %s secret", managedFusionSecretName))
+				r.Log.Info(fmt.Sprintf(
+					"removing finalizer from %s (%s)",
+					r.managedFusionOffering.Name,
+					r.managedFusionOffering.Namespace,
+				))
 				if err := r.update(r.managedFusionOffering); err != nil {
-					return ctrl.Result{}, fmt.Errorf("failed to remove finalizer from %s secret: %v", managedFusionSecretName, err)
+					return ctrl.Result{}, fmt.Errorf(
+						"failed to remove finalizer from %s (%s): %v",
+						r.managedFusionOffering.Name,
+						r.managedFusionOffering.Namespace,
+						err,
+					)
 				}
+			}
+			r.Log.Info(fmt.Sprintf("issuing a delete for %s namespace", r.namespace))
+			if err := r.delete(&corev1.Namespace{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: r.namespace,
+				},
+			}); err != nil {
+				return ctrl.Result{}, fmt.Errorf("unable to issue a delete for namespace: %v", err)
 			}
 		}
 	} else if r.managedFusionOffering.UID != "" {
 		if added := utils.AddFinalizer(r.managedFusionOffering, managedFusionFinalizer); added {
-			r.Log.V(-1).Info(fmt.Sprintf("finalizer missing on the %s secret resource, adding...", managedFusionSecretName))
+			r.Log.Info(fmt.Sprintf(
+				"finalizer missing on %s (%s), adding...",
+				r.managedFusionOffering.Name,
+				r.managedFusionOffering.Namespace,
+			))
 			if err := r.update(r.managedFusionOffering); err != nil {
-				return ctrl.Result{}, fmt.Errorf("failed to update %s secret with finalizer: %v", managedFusionSecretName, err)
+				return ctrl.Result{}, fmt.Errorf(
+					"failed to update %s (%s) with finalizer: %v",
+					r.managedFusionOffering.Name,
+					r.managedFusionOffering.Namespace,
+					err,
+				)
 			}
 		}
 
@@ -147,15 +180,14 @@ func (r *ManagedFusionOfferingReconciler) reconcilePhases() (reconcile.Result, e
 		if err := r.reconcileSubscription(); err != nil {
 			return ctrl.Result{}, err
 		}
-
-		if result, err := pluginReconcile(r, r.managedFusionOffering); err != nil {
-			return ctrl.Result{}, fmt.Errorf("an error was encountered during reconcile: %v", err)
-		} else {
-			return result, nil
-		}
 	}
 
-	return ctrl.Result{}, nil
+	if result, err := pluginReconcile(r, r.managedFusionOffering); err != nil {
+		return ctrl.Result{}, fmt.Errorf("an error was encountered during reconcile: %v", err)
+	} else {
+		return result, nil
+	}
+
 }
 
 func (r *ManagedFusionOfferingReconciler) reconcileOperatorGroup() error {
@@ -227,6 +259,13 @@ func (r *ManagedFusionOfferingReconciler) update(obj client.Object) error {
 
 func (r *ManagedFusionOfferingReconciler) own(res client.Object, isController bool) error {
 	return utils.AddOwnerReference(r.managedFusionOffering, res, r.Scheme, isController)
+}
+
+func (r *ManagedFusionOfferingReconciler) delete(obj client.Object) error {
+	if err := r.Client.Delete(r.ctx, obj); err != nil && !errors.IsNotFound(err) {
+		return err
+	}
+	return nil
 }
 
 func (r *ManagedFusionOfferingReconciler) CreateOrUpdate(obj client.Object, f controllerutil.MutateFn) (controllerutil.OperationResult, error) {
