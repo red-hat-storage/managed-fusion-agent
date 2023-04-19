@@ -25,6 +25,7 @@ import (
 	promv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	v1alpha1 "github.com/red-hat-storage/managed-fusion-agent/api/v1alpha1"
 	"github.com/red-hat-storage/managed-fusion-agent/datafoundation"
+	"github.com/red-hat-storage/managed-fusion-agent/datafoundation/templates"
 	"github.com/red-hat-storage/managed-fusion-agent/utils"
 	ocsv1 "github.com/red-hat-storage/ocs-operator/api/v1"
 	ocsv1alpha1 "github.com/red-hat-storage/ocs-operator/api/v1alpha1"
@@ -274,7 +275,7 @@ func (r *dataFoundationReconciler) reconcileStorageCluster() error {
 		}
 
 		// Convert the desired size to the device set count based on the underlaying OSD size
-		desiredDeviceSetCount := int(math.Ceil(float64(r.spec.usableCapacityInTiB) / datafoundation.OSDSizeInTiB))
+		desiredDeviceSetCount := int(math.Ceil(float64(r.spec.usableCapacityInTiB) / templates.OSDSizeInTiB))
 
 		// Get the storage device set count of the current storage cluster
 		currDeviceSetCount := 0
@@ -283,7 +284,7 @@ func (r *dataFoundationReconciler) reconcileStorageCluster() error {
 		}
 
 		// Get the desired storage device set from storage cluster template
-		sc := datafoundation.StorageClusterTemplate.DeepCopy()
+		sc := templates.StorageClusterTemplate.DeepCopy()
 		var ds *ocsv1.StorageDeviceSet = nil
 		if desiredStorageDeviceSet := findStorageDeviceSet(sc.Spec.StorageDeviceSets, defaultDeviceSetName); desiredStorageDeviceSet != nil {
 			ds = desiredStorageDeviceSet
@@ -403,7 +404,7 @@ func (r *dataFoundationReconciler) reconcileCephIngressNetworkPolicy() error {
 		if err := r.own(&r.cephIngressNetworkPolicy, true); err != nil {
 			return err
 		}
-		desired := datafoundation.CephNetworkPolicyTemplate.DeepCopy()
+		desired := templates.CephNetworkPolicyTemplate.DeepCopy()
 		r.cephIngressNetworkPolicy.Spec = desired.Spec
 		return nil
 	})
@@ -418,7 +419,7 @@ func (r *dataFoundationReconciler) reconcileProviderAPIServerNetworkPolicy() err
 		if err := r.own(&r.providerAPIServerNetworkPolicy, true); err != nil {
 			return err
 		}
-		desired := datafoundation.ProviderApiServerNetworkPolicyTemplate.DeepCopy()
+		desired := templates.ProviderApiServerNetworkPolicyTemplate.DeepCopy()
 		r.providerAPIServerNetworkPolicy.Spec = desired.Spec
 		return nil
 	})
