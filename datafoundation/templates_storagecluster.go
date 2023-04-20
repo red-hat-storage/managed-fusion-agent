@@ -101,6 +101,7 @@ var StorageClusterTemplate = ocsv1.StorageCluster{
 			Parameters: map[string]string{
 				"iops":       "12000",
 				"throughput": "250",
+				"type":       "gp3",
 			},
 		}},
 		StorageProfiles: []ocsv1.StorageProfile{{
