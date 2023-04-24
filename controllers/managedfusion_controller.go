@@ -299,14 +299,36 @@ func (r *ManagedFusionReconciler) initReconciler(ctx context.Context, req ctrl.R
 func (r *ManagedFusionReconciler) reconcilePhases() (reconcile.Result, error) {
 	if !r.managedFusionSecret.DeletionTimestamp.IsZero() {
 		r.Log.Info("Managed Fusion configuration Secret is marked for deletion, checking for ManagedFusionOfferings CRs on the cluster")
-		if found, err := r.checkForManagedOfferings(); err != nil {
-			return ctrl.Result{}, err
-		} else if found {
-			r.Log.Info("ManagedFusionOffering CRs found, issuing delete")
-			offering := v1alpha1.ManagedFusionOffering{}
-			if err := r.deleteAllOf(&offering); err != nil {
-				return ctrl.Result{}, fmt.Errorf("failed to issue delete for one or more ManagedFusionOffering CRs, %v", err)
-			} else {
+		offeringList := v1alpha1.ManagedFusionOfferingList{}
+		if err := r.list(&offeringList); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to list ManagedFusionOffering CRs, %v", err)
+		}
+		if len(offeringList.Items) > 0 {
+			var found bool
+			var errors []error
+			for i := range offeringList.Items {
+				offering := &offeringList.Items[i]
+				if offering.DeletionTimestamp.IsZero() {
+					r.Log.Info(
+						"a ManagedFusionOffering CR found %s (%s), issuing delete",
+						offering.Name,
+						offering.Namespace,
+					)
+					found = true
+					if err := r.delete(offering); err != nil {
+						wrapped := fmt.Errorf(
+							"failed to delete ManagedFusionOffering CR %s (%s), %v",
+							offering.Name,
+							offering.Namespace,
+							err,
+						)
+						errors = append(errors, wrapped)
+					}
+				}
+			}
+			if len(errors) > 0 {
+				return ctrl.Result{}, fmt.Errorf("failed to issue delete for one or more ManagedFusionOffering CRs, %v", errors)
+			} else if found {
 				r.Log.Info("ManagedFusionOffering CRs delete issued, requeuing the event")
 				return ctrl.Result{RequeueAfter: 10}, nil
 			}
@@ -369,15 +391,6 @@ func (r *ManagedFusionReconciler) reconcilePhases() (reconcile.Result, error) {
 	}
 
 	return ctrl.Result{}, nil
-}
-
-// TODO Add logic to check if the offerings exists
-func (r *ManagedFusionReconciler) checkForManagedOfferings() (bool, error) {
-	offerings := v1alpha1.ManagedFusionOfferingList{}
-	if err := r.list(&offerings, client.Limit(1)); err != nil {
-		return false, fmt.Errorf("error listing ManagedFusionOffering CRs, %v", err)
-	}
-	return len(offerings.Items) > 0, nil
 }
 
 func (r *ManagedFusionReconciler) reconcilePrometheus() error {
@@ -872,10 +885,6 @@ func (r *ManagedFusionReconciler) delete(obj client.Object) error {
 		return err
 	}
 	return nil
-}
-
-func (r *ManagedFusionReconciler) deleteAllOf(obj client.Object) error {
-	return r.Client.DeleteAllOf(r.ctx, obj)
 }
 
 func (r *ManagedFusionReconciler) own(resource metav1.Object) error {
