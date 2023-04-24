@@ -142,9 +142,6 @@ func (r *dataFoundationReconciler) initReconciler(reconciler *ManagedFusionOffer
 	r.rookConfigMap.Name = "rook-ceph-operator-config"
 	r.rookConfigMap.Namespace = offering.Namespace
 
-	r.providerAPIServerNetworkPolicy.Name = "provider-api-server-rule"
-	r.providerAPIServerNetworkPolicy.Namespace = offering.Namespace
-
 	r.ocsInitialization.Name = "ocsinit"
 	r.ocsInitialization.Namespace = offering.Namespace
 }
