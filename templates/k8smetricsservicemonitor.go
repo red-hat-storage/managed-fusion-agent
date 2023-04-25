@@ -42,7 +42,7 @@ var K8sMetricsServiceMonitorTemplate = promv1.ServiceMonitor{
 						Action:      "replace",
 						Regex:       "prometheus-k8s-.*",
 						Replacement: "",
-						SourceLabels: []string{
+						SourceLabels: []promv1.LabelName{
 							"pod",
 						},
 						TargetLabel: "pod",
