@@ -100,13 +100,13 @@ type StorageClusterSpec struct {
 	// storageDeviceSets section of the CR.
 	BackingStorageClasses []BackingStorageClass `json:"backingStorageClasses,omitempty"`
 	// DefaultStorageProfile is the default storage profile to use for
-	// the storageclassclaims as StorageProfile is optional.
+	// the storageclassrequest as StorageProfile is optional.
 	DefaultStorageProfile string `json:"defaultStorageProfile,omitempty"`
 
 	StorageProfiles []StorageProfile `json:"storageProfiles,omitempty"`
 }
 
-// StorageProfile is the storage profile to use for the storageclassclaims.
+// StorageProfile is the storage profile to use for the storageclassrequest.
 type StorageProfile struct {
 	// +kubebuilder:validation:Required
 	// Name of the storage profile.
@@ -232,30 +232,6 @@ const (
 type ExternalStorageClusterSpec struct {
 	// +optional
 	Enable bool `json:"enable,omitempty"`
-
-	//+kubebuilder:validation:Enum=ocs;rhcs
-	// StorageProviderKind Identify the type of storage provider cluster this consumer cluster is going to connect to.
-	StorageProviderKind ExternalStorageKind `json:"storageProviderKind,omitempty"`
-
-	// StorageProviderEndpoint holds info to establish connection with the storage providing cluster.
-	StorageProviderEndpoint string `json:"storageProviderEndpoint,omitempty"`
-
-	// OnboardingTicket holds an identity information required for consumer to onboard.
-	OnboardingTicket string `json:"onboardingTicket,omitempty"`
-
-	// RequestedCapacity Will define the desired capacity requested by a consumer cluster.
-	RequestedCapacity *resource.Quantity `json:"requestedCapacity,omitempty"`
-}
-
-// ExternalStorageClusterStatus defines the status of the external Storage Cluster
-// to be connected to the local cluster
-type ExternalStorageClusterStatus struct {
-	// GrantedCapacity Will report the actual capacity
-	// granted to the consumer cluster by the provider cluster.
-	GrantedCapacity resource.Quantity `json:"grantedCapacity,omitempty"`
-
-	// ConsumerID will hold the identity of this cluster inside the attached provider cluster
-	ConsumerID string `json:"id,omitempty"`
 }
 
 // StorageDeviceSet defines a set of storage devices.
@@ -447,9 +423,6 @@ type StorageClusterStatus struct {
 	// ExternalSecretHash holds the checksum value of external secret data.
 	ExternalSecretHash string `json:"externalSecretHash,omitempty"`
 
-	// ExternalStorage shows the status of the external cluster
-	ExternalStorage ExternalStorageClusterStatus `json:"externalStorage,omitempty"`
-
 	// Images holds the image reconcile status for all images reconciled by the operator
 	Images ImagesStatus `json:"images,omitempty"`
 
@@ -522,8 +495,9 @@ const (
 // +kubebuilder:printcolumn:name="External",type=boolean,JSONPath=.spec.externalStorage.enable,description="External Storage Cluster"
 // +kubebuilder:printcolumn:name="Created At",type=string,JSONPath=.metadata.creationTimestamp
 // +kubebuilder:printcolumn:name="Version",type=string,JSONPath=.status.version,description="Storage Cluster Version"
+// +operator-sdk:csv:customresourcedefinitions:displayName="Storage Cluster",resources={{CephCluster,v1,cephclusters.ceph.rook.io},{NooBaa,v1alpha1,noobaas.noobaa.io}}
 
-// StorageCluster is the Schema for the storageclusters API
+// StorageCluster represents a cluster including Ceph Cluster, NooBaa and all the storage and compute resources required.
 type StorageCluster struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
