@@ -365,10 +365,16 @@ func pluginGetDesiredSubscriptionSpec(r *ManagedFusionOfferingReconciler) *opv1a
 			Channel: "stable-4.12",
 			Package: "ocs-operator",
 			Config: &opv1a1.SubscriptionConfig{
-				Env: []corev1.EnvVar{{
-					Name:  "SKIP_NOOBAA_CRD_WATCH",
-					Value: "true",
-				}},
+				Env: []corev1.EnvVar{
+					{
+						Name:  "SKIP_NOOBAA_CRD_WATCH",
+						Value: "true",
+					},
+					{
+						Name:  "ROOK_DISABLE_OBJECT_BUCKET_CLAIM",
+						Value: "true",
+					},
+				},
 			},
 		}
 	case v1alpha1.KindDataFoundationClient:
