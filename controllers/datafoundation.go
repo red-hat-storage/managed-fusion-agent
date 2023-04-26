@@ -31,6 +31,7 @@ import (
 	ocsv1alpha1 "github.com/red-hat-storage/ocs-operator/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	netv1 "k8s.io/api/networking/v1"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -42,9 +43,11 @@ import (
 )
 
 const (
-	defaultDeviceSetName = "default"
-	ocsOperatorName      = "ocs-operator"
-	storageClusterName   = "ocs-storagecluster"
+	defaultDeviceSetName     = "default"
+	ocsOperatorName          = "ocs-operator"
+	storageClusterName       = "ocs-storagecluster"
+	storageClusterCRDName    = "storageclusters.ocs.openshift.io"
+	ocsInitializationCRDName = "ocsinitializations.ocs.openshift.io"
 )
 
 type dataFoundationSpec struct {
@@ -63,6 +66,7 @@ type dataFoundationReconciler struct {
 	providerAPIServerNetworkPolicy netv1.NetworkPolicy
 	rookConfigMap                  corev1.ConfigMap
 	ocsInitialization              ocsv1.OCSInitialization
+	availableCRDs                  map[string]bool
 }
 
 //+kubebuilder:rbac:groups=ocs.openshift.io,resources=storageclusters,verbs=get;list;watch;create;update;patch;delete
@@ -71,7 +75,7 @@ type dataFoundationReconciler struct {
 //+kubebuilder:rbac:groups=network.openshift.io,resources=ingressnetworkpolicies,verbs=create;get;list;watch;update
 //+kubebuilder:rbac:groups=operators.coreos.com,resources=clusterserviceversions,verbs=get;list;watch;delete;update;patch
 
-func dfSetupWatches(controllerBuilder *builder.Builder) {
+func dfSetupWatches(offeringReconciler *ManagedFusionOfferingReconciler, controllerBuilder *builder.Builder) {
 	csvPredicates := builder.WithPredicates(
 		predicate.NewPredicateFuncs(
 			func(res client.Object) bool {
@@ -79,13 +83,21 @@ func dfSetupWatches(controllerBuilder *builder.Builder) {
 			},
 		),
 	)
+
 	controllerBuilder.
 		Owns(&corev1.Secret{}).
-		Owns(&ocsv1.StorageCluster{}).
 		Owns(&netv1.NetworkPolicy{}).
 		Owns(&corev1.ConfigMap{}).
-		Owns(&opv1a1.ClusterServiceVersion{}, csvPredicates).
-		Owns(&ocsv1.OCSInitialization{})
+		Owns(&opv1a1.ClusterServiceVersion{}, csvPredicates)
+
+	if offeringReconciler.AvailableCRDs[storageClusterCRDName] {
+		controllerBuilder.
+			Owns(&ocsv1.StorageCluster{})
+	}
+	if offeringReconciler.AvailableCRDs[ocsInitializationCRDName] {
+		controllerBuilder.
+			Owns(&ocsv1.OCSInitialization{})
+	}
 }
 
 func DFAddToScheme(scheme *runtime.Scheme) {
@@ -144,9 +156,31 @@ func (r *dataFoundationReconciler) initReconciler(reconciler *ManagedFusionOffer
 
 	r.ocsInitialization.Name = "ocsinit"
 	r.ocsInitialization.Namespace = offering.Namespace
+
+	r.availableCRDs = reconciler.AvailableCRDs
 }
 
 func (r *dataFoundationReconciler) reconcilePhases() (ctrl.Result, error) {
+	// Checking for CRDs that were installed after the agent was started
+	if !r.availableCRDs[storageClusterCRDName] {
+		crd := apiextensionsv1.CustomResourceDefinition{}
+		crd.Name = storageClusterCRDName
+		if err := r.get(&crd); err != nil {
+			return ctrl.Result{}, err
+		} else {
+			utils.HandleMissingWatch(storageClusterCRDName)
+		}
+	}
+	if !r.availableCRDs[ocsInitializationCRDName] {
+		crd := apiextensionsv1.CustomResourceDefinition{}
+		crd.Name = ocsInitializationCRDName
+		if err := r.get(&crd); err != nil {
+			return ctrl.Result{}, err
+		} else {
+			utils.HandleMissingWatch(ocsInitializationCRDName)
+		}
+	}
+
 	if !r.offering.DeletionTimestamp.IsZero() {
 		if err := r.get(&r.storageCluster); err != nil {
 			return ctrl.Result{}, fmt.Errorf("unable to get storagecluster: %v", err)

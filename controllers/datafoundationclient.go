@@ -9,6 +9,7 @@ import (
 	"github.com/red-hat-storage/managed-fusion-agent/utils"
 	ocsclient "github.com/red-hat-storage/ocs-client-operator/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -31,18 +32,21 @@ type dataFoundationClientReconciler struct {
 	defaultBlockStorageClassClaim    ocsclient.StorageClassClaim
 	defaultFSStorageClassClaim       ocsclient.StorageClassClaim
 	csiKMSConnectionDetailsConfigMap corev1.ConfigMap
+	availableCRDs                    map[string]bool
 }
 
 const (
 	ocsClientOperatorName                = "ocs-client-operator"
 	csiKMSConnectionDetailsConfigMapName = "csi-kms-connection-details"
+	storageClientCRDName                 = "storageclients.ocs.openshift.io"
+	storageClassClaimCRDName             = "storageclassclaims.ocs.openshift.io"
 )
 
 //+kubebuilder:rbac:groups=ocs.openshift.io,resources=storageclients,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=ocs.openshift.io,resources=storageclassclaims,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=operators.coreos.com,resources=clusterserviceversions,verbs=get;list;watch;delete;update;patch
 
-func dfcSetupWatches(controllerBuilder *builder.Builder) {
+func dfcSetupWatches(offeringReconciler *ManagedFusionOfferingReconciler, controllerBuilder *builder.Builder) {
 	csvPredicates := builder.WithPredicates(
 		predicate.NewPredicateFuncs(
 			func(res client.Object) bool {
@@ -52,9 +56,17 @@ func dfcSetupWatches(controllerBuilder *builder.Builder) {
 	)
 	controllerBuilder.
 		Owns(&opv1a1.ClusterServiceVersion{}, csvPredicates).
-		Owns(&ocsclient.StorageClient{}).
-		Owns(&ocsclient.StorageClassClaim{}).
-		Owns(&corev1.ConfigMap{})
+		Owns(&corev1.ConfigMap{}).
+		Owns(&opv1a1.ClusterServiceVersion{}, csvPredicates)
+
+	if offeringReconciler.AvailableCRDs[storageClientCRDName] {
+		controllerBuilder.
+			Owns(&ocsclient.StorageClient{})
+	}
+	if offeringReconciler.AvailableCRDs[storageClassClaimCRDName] {
+		controllerBuilder.
+			Owns(&ocsclient.StorageClassClaim{})
+	}
 }
 
 func DFCAddToScheme(scheme *runtime.Scheme) {
@@ -84,6 +96,8 @@ func (r *dataFoundationClientReconciler) initReconciler(reconciler *ManagedFusio
 
 	r.csiKMSConnectionDetailsConfigMap.Name = csiKMSConnectionDetailsConfigMapName
 	r.csiKMSConnectionDetailsConfigMap.Namespace = offering.Namespace
+
+	r.availableCRDs = reconciler.AvailableCRDs
 }
 
 func (r *dataFoundationClientReconciler) parseSpec(offering *v1alpha1.ManagedFusionOffering) error {
@@ -122,6 +136,26 @@ func (r *dataFoundationClientReconciler) parseSpec(offering *v1alpha1.ManagedFus
 }
 
 func (r *dataFoundationClientReconciler) reconcilePhases() (ctrl.Result, error) {
+	// Checking for CRDs that were installed after the agent was started
+	if !r.availableCRDs[storageClientCRDName] {
+		crd := apiextensionsv1.CustomResourceDefinition{}
+		crd.Name = storageClientCRDName
+		if err := r.get(&crd); err != nil {
+			return ctrl.Result{}, err
+		} else {
+			utils.HandleMissingWatch(storageClientCRDName)
+		}
+	}
+	if !r.availableCRDs[storageClassClaimCRDName] {
+		crd := apiextensionsv1.CustomResourceDefinition{}
+		crd.Name = storageClassClaimCRDName
+		if err := r.get(&crd); err != nil {
+			return ctrl.Result{}, err
+		} else {
+			utils.HandleMissingWatch(storageClassClaimCRDName)
+		}
+	}
+
 	if !r.offering.DeletionTimestamp.IsZero() {
 		return ctrl.Result{}, nil
 	} else {
