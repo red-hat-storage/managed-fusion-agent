@@ -3,18 +3,6 @@
 # cloud.google.com/go/compute v1.7.0
 ## explicit; go 1.15
 cloud.google.com/go/compute/metadata
-# github.com/Azure/go-autorest v14.2.0+incompatible
-## explicit
-# github.com/Azure/go-autorest/autorest v0.11.27
-## explicit; go 1.15
-# github.com/Azure/go-autorest/autorest/adal v0.9.20
-## explicit; go 1.15
-# github.com/Azure/go-autorest/autorest/date v0.3.0
-## explicit; go 1.12
-# github.com/Azure/go-autorest/logger v0.2.1
-## explicit; go 1.12
-# github.com/Azure/go-autorest/tracing v0.6.0
-## explicit; go 1.12
 # github.com/armon/go-metrics v0.4.0
 ## explicit; go 1.12
 github.com/armon/go-metrics
@@ -24,9 +12,9 @@ github.com/armon/go-radix
 # github.com/beorn7/perks v1.0.1
 ## explicit; go 1.11
 github.com/beorn7/perks/quantile
-# github.com/blang/semver v3.5.1+incompatible
-## explicit
-github.com/blang/semver
+# github.com/blang/semver/v4 v4.0.0
+## explicit; go 1.14
+github.com/blang/semver/v4
 # github.com/cenkalti/backoff/v3 v3.2.2
 ## explicit; go 1.12
 github.com/cenkalti/backoff/v3
@@ -63,8 +51,6 @@ github.com/go-logr/zapr
 ## explicit; go 1.15
 github.com/gogo/protobuf/proto
 github.com/gogo/protobuf/sortkeys
-# github.com/golang-jwt/jwt/v4 v4.3.0
-## explicit; go 1.15
 # github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da
 ## explicit
 github.com/golang/groupcache/lru
@@ -204,8 +190,6 @@ github.com/json-iterator/go
 github.com/kube-object-storage/lib-bucket-provisioner/pkg/apis/objectbucket.io
 github.com/kube-object-storage/lib-bucket-provisioner/pkg/apis/objectbucket.io/v1alpha1
 github.com/kube-object-storage/lib-bucket-provisioner/pkg/provisioner/api
-# github.com/kubernetes-csi/external-snapshotter/client/v6 v6.2.0
-## explicit; go 1.19
 # github.com/libopenstorage/secrets v0.0.0-20220710000753-f1eb4e951e29
 ## explicit; go 1.13
 github.com/libopenstorage/secrets
@@ -279,8 +263,8 @@ github.com/openshift/api/security/v1
 # github.com/openshift/custom-resource-status v0.0.0-20190812200727-7961da9a2eb7
 ## explicit; go 1.12
 github.com/openshift/custom-resource-status/conditions/v1
-# github.com/operator-framework/api v0.16.0 => github.com/operator-framework/api v0.1.1
-## explicit; go 1.13
+# github.com/operator-framework/api v0.16.0
+## explicit; go 1.18
 github.com/operator-framework/api/pkg/lib/version
 github.com/operator-framework/api/pkg/operators
 github.com/operator-framework/api/pkg/operators/v1
@@ -295,7 +279,7 @@ github.com/pierrec/lz4/internal/xxh32
 # github.com/pkg/errors v0.9.1
 ## explicit
 github.com/pkg/errors
-# github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring v0.58.0 => github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring v0.53.1
+# github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring v0.58.0
 ## explicit; go 1.17
 github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring
 github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1
@@ -319,10 +303,10 @@ github.com/prometheus/common/model
 github.com/prometheus/procfs
 github.com/prometheus/procfs/internal/fs
 github.com/prometheus/procfs/internal/util
-# github.com/red-hat-storage/ocs-client-operator v0.0.0-20230330142600-a324e157e2eb
+# github.com/red-hat-storage/ocs-client-operator v0.0.0-20230411145513-ac2c276878b8
 ## explicit; go 1.18
 github.com/red-hat-storage/ocs-client-operator/api/v1alpha1
-# github.com/red-hat-storage/ocs-operator v0.4.12
+# github.com/red-hat-storage/ocs-operator v0.4.13-0.20230424145935-444117269695
 ## explicit; go 1.18
 github.com/red-hat-storage/ocs-operator/api/v1
 github.com/red-hat-storage/ocs-operator/api/v1alpha1
@@ -848,8 +832,6 @@ sigs.k8s.io/yaml
 # github.com/kubernetes-incubator/external-storage => github.com/libopenstorage/external-storage v0.20.4-openstorage-rc3
 # github.com/onsi/gomega => github.com/onsi/gomega v1.17.0
 # github.com/openshift/api => github.com/openshift/api v0.0.0-20201203102015-275406142edb
-# github.com/operator-framework/api => github.com/operator-framework/api v0.1.1
-# github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring => github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring v0.53.1
 # github.com/prometheus/prometheus => github.com/prometheus/prometheus v1.8.2-0.20190424153033-d3245f150225
 # go.uber.org/zap => go.uber.org/zap v1.19.0
 # k8s.io/api => k8s.io/api v0.21.3
