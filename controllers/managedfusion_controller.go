@@ -98,6 +98,7 @@ type ManagedFusionReconciler struct {
 	pagerDutyConfigData          *pagerDutyConfig
 	egressNetworkPolicy          *openshiftv1.EgressNetworkPolicy
 	egressFirewall               *ovnv1.EgressFirewall
+	remoteWriteConfigData        *remoteWriteConfig
 }
 
 type smtpConfig struct {
@@ -111,6 +112,10 @@ type smtpConfig struct {
 type pagerDutyConfig struct {
 	SOPEndpoint string `yaml:"sopEndpoint"`
 	ServiceKey  string `yaml:"serviceKey"`
+}
+
+type remoteWriteConfig struct {
+	BearerToken string `yaml:"bearerToken"`
 }
 
 // Add necessary rbac permissions for managedfusion finalizer in order to set blockOwnerDeletion.
@@ -222,13 +227,20 @@ func (r *ManagedFusionReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	if config, found := r.managedFusionSecret.Data["pager_duty_config"]; !found {
 		return ctrl.Result{}, fmt.Errorf("%s secret does not contain pager_duty_config entry", managedFusionSecretName)
 	} else if err := yaml.Unmarshal(config, r.pagerDutyConfigData); err != nil {
-		return ctrl.Result{}, fmt.Errorf("%s.pager_duty_config is not in a valid yaml format: %v", managedFusionSecretName, err)
+		return ctrl.Result{}, fmt.Errorf("failed to unmarshal agent pager_duty_config at %s, %v", managedFusionSecretName, err)
 	}
 
 	if config, found := r.managedFusionSecret.Data["smtp_config"]; !found {
 		return ctrl.Result{}, fmt.Errorf("%s secret does not contain smtp_config entry", managedFusionSecretName)
 	} else if err := yaml.Unmarshal(config, r.smtpConfigData); err != nil {
-		return ctrl.Result{}, fmt.Errorf("%s.smtp_config is not in a valid yaml format: %v", managedFusionSecretName, err)
+		return ctrl.Result{}, fmt.Errorf("failed to unmarshal agent smpt_config at %s, %v", managedFusionSecretName, err)
+	}
+
+	if config, found := r.managedFusionSecret.Data["remote_write_config"]; found {
+		r.remoteWriteConfigData = &remoteWriteConfig{}
+		if err := yaml.Unmarshal(config, r.remoteWriteConfigData); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to unmarshal agent remote_write_config at %s, %v", managedFusionSecretName, err)
+		}
 	}
 
 	// Run the reconcile phases
@@ -445,6 +457,16 @@ func (r *ManagedFusionReconciler) reconcilePrometheus() error {
 
 		r.prometheus.Spec = desired.Spec
 		r.prometheus.Spec.ExternalLabels["clusterId"] = string(clusterVersion.Spec.ClusterID)
+
+		if r.remoteWriteConfigData != nil {
+			if r.remoteWriteConfigData.BearerToken == "" {
+				return fmt.Errorf("invalid remote write bearer token, empty string")
+			}
+			r.prometheus.Spec.RemoteWrite[0].BearerToken = r.remoteWriteConfigData.BearerToken
+		} else {
+			r.prometheus.Spec.RemoteWrite[0] = promv1.RemoteWriteSpec{}
+		}
+
 		r.prometheus.Spec.Alerting.Alertmanagers[0].Namespace = r.Namespace
 		r.prometheus.Spec.AdditionalAlertRelabelConfigs = &corev1.SecretKeySelector{
 			LocalObjectReference: corev1.LocalObjectReference{

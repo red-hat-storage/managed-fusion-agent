@@ -18,6 +18,7 @@ package templates
 
 import (
 	"fmt"
+	"strings"
 
 	promv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	"github.com/red-hat-storage/managed-fusion-agent/utils"
@@ -34,42 +35,44 @@ var resourceSelector = metav1.LabelSelector{
 	},
 }
 
-var (
+const (
+	//TODO: Construct monitoring dns name dynamically based on AWS and IBM Cloud Monitoring regions
+	RemoteWriteDNSName                  string = "ingest.us-south.monitoring.cloud.ibm.com"
 	KubeRBACProxyPortNumber             int    = 9339
 	PrometheusServingCertSecretName     string = "prometheus-serving-cert-secret"
 	PrometheusKubeRBACPoxyConfigMapName string = "prometheus-kube-rbac-proxy-config"
 )
 
-// var metrics = []string{
-// 	"job:ceph_versions_running:count",
-// 	"job:ceph_pools_iops_bytes:total",
-// 	"job:ceph_pools_iops:total",
-// 	"job:kube_pv:count",
-// 	"job:ceph_osd_metadata:count",
-// 	"ceph_health_status",
-// 	"ceph_cluster_total_used_raw_bytes",
-// 	"ceph_cluster_total_bytes",
-// 	"cluster:kubelet_volume_stats_used_bytes:provisioner:sum",
-// 	"cluster:kube_persistentvolumeclaim_resource_requests_storage_bytes:provisioner:sum",
-// }
+var metrics = []string{
+	// "job:ceph_versions_running:count",
+	// "job:ceph_pools_iops_bytes:total",
+	// "job:ceph_pools_iops:total",
+	// "job:ceph_osd_metadata:count",
+	// "ceph_health_status",
+	// "ceph_cluster_total_used_raw_bytes",
+	// "ceph_cluster_total_bytes",
+	// "job:kube_pv:count",
+	// "cluster:kubelet_volume_stats_used_bytes:provisioner:sum",
+	// "cluster:kube_persistentvolumeclaim_resource_requests_storage_bytes:provisioner:sum",
+}
 
-// var alerts = []string{
-// 	"CephMdsMissingReplicas",
-// 	"CephMgrIsAbsent",
-// 	"CephMgrIsMissingReplicas",
-// 	"CephNodeDown",
-// 	"CephClusterErrorState",
-// 	"CephClusterWarningState",
-// 	"CephOSDVersionMismatch",
-// 	"CephMonVersionMismatch",
-// 	"CephOSDFlapping",
-// 	"CephOSDDiskNotResponding",
-// 	"CephOSDDiskUnavailable",
-// 	"CephDataRecoveryTakingTooLong",
-// 	"CephPGRepairTakingTooLong",
-// 	"CephMonQuorumAtRisk",
-// 	"CephMonQuorumLost",
-// }
+var alerts = []string{
+	// "CephMdsMissingReplicas",
+	// "CephMgrIsAbsent",
+	// "CephMgrIsMissingReplicas",
+	// "CephNodeDown",
+	// "CephClusterErrorState",
+	// "CephClusterWarningState",
+	// "CephOSDVersionMismatch",
+	// "CephMonVersionMismatch",
+	// "CephOSDFlapping",
+	// "CephOSDDiskNotResponding",
+	// "CephOSDDiskUnavailable",
+	// "CephDataRecoveryTakingTooLong",
+	// "CephPGRepairTakingTooLong",
+	// "CephMonQuorumAtRisk",
+	// "CephMonQuorumLost",
+}
 
 var PrometheusTemplate = promv1.Prometheus{
 	Spec: promv1.PrometheusSpec{
@@ -136,38 +139,28 @@ var PrometheusTemplate = promv1.Prometheus{
 				},
 			},
 		},
-		// RemoteWrite: []promv1.RemoteWriteSpec{
-		// 	{
-		// 		OAuth2: &promv1.OAuth2{
-		// 			ClientSecret: corev1.SecretKeySelector{
-		// 				LocalObjectReference: corev1.LocalObjectReference{},
-		// 			},
-		// 			ClientID: promv1.SecretOrConfigMap{
-		// 				Secret: &corev1.SecretKeySelector{
-		// 					LocalObjectReference: corev1.LocalObjectReference{},
-		// 				},
-		// 			},
-		// 			EndpointParams: map[string]string{},
-		// 		},
-		// 		WriteRelabelConfigs: []promv1.RelabelConfig{
-		// 			{
-		// 				SourceLabels: []string{"__name__", "alertname"},
-		// 				Regex:        getRelableRegex(alerts, metrics),
-		// 				Action:       "keep",
-		// 			},
-		// 		},
-		// 	},
-		// },
+		RemoteWrite: []promv1.RemoteWriteSpec{
+			{
+				URL: "https://ingest.us-south.monitoring.cloud.ibm.com/prometheus/remote/write",
+				WriteRelabelConfigs: []promv1.RelabelConfig{
+					{
+						SourceLabels: []string{"__name__", "alertname"},
+						Regex:        getRelableRegex(alerts, metrics),
+						Action:       "keep",
+					},
+				},
+			},
+		},
 	},
 }
 
-// func getRelableRegex(alerts []string, metrics []string) string {
-// 	return fmt.Sprintf(
-// 		"(ALERTS;(%s))|%s",
-// 		strings.Join(alerts, "|"),
-// 		strings.Join(
-// 			utils.MapItems(metrics, func(str string) string { return fmt.Sprintf("(%s;)", str) }),
-// 			"|",
-// 		),
-// 	)
-// }
+func getRelableRegex(alerts []string, metrics []string) string {
+	return fmt.Sprintf(
+		"(ALERTS;(%s))|%s",
+		strings.Join(alerts, "|"),
+		strings.Join(
+			utils.MapItems(metrics, func(str string) string { return fmt.Sprintf("(%s;)", str) }),
+			"|",
+		),
+	)
+}
