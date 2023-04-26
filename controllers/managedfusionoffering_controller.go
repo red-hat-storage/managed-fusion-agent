@@ -47,9 +47,10 @@ const (
 
 // ManagedFusionOfferingReconciler reconciles a ManagedFusionOffering object
 type ManagedFusionOfferingReconciler struct {
-	Client client.Client
-	Log    logr.Logger
-	Scheme *runtime.Scheme
+	Client        client.Client
+	Log           logr.Logger
+	Scheme        *runtime.Scheme
+	AvailableCRDs map[string]bool
 
 	ctx                   context.Context
 	namespace             string
@@ -71,7 +72,7 @@ func (r *ManagedFusionOfferingReconciler) SetupWithManager(mgr ctrl.Manager, ctr
 		Owns(&opv1a1.CatalogSource{}).
 		Owns(&opv1a1.Subscription{})
 
-	pluginSetupWatches(controllerBuilder)
+	pluginSetupWatches(r, controllerBuilder)
 
 	return controllerBuilder.Complete(r)
 }
@@ -187,7 +188,6 @@ func (r *ManagedFusionOfferingReconciler) reconcilePhases() (reconcile.Result, e
 	} else {
 		return result, nil
 	}
-
 }
 
 func (r *ManagedFusionOfferingReconciler) reconcileOperatorGroup() error {
@@ -330,9 +330,9 @@ func pluginReconcile(reconciler *ManagedFusionOfferingReconciler, offering *v1al
 }
 
 // This function is a placeholder for offering plugin integration
-func pluginSetupWatches(controllerBuilder *builder.Builder) {
-	dfSetupWatches(controllerBuilder)
-	dfcSetupWatches(controllerBuilder)
+func pluginSetupWatches(r *ManagedFusionOfferingReconciler, controllerBuilder *builder.Builder) {
+	dfSetupWatches(r, controllerBuilder)
+	dfcSetupWatches(r, controllerBuilder)
 }
 
 // This function is a placeholder for offering plugin integration
