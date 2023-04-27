@@ -2,7 +2,6 @@ package controllers
 
 import (
 	"fmt"
-	"net/url"
 	"strings"
 
 	opv1a1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
@@ -141,19 +140,11 @@ func (r *dataFoundationClientReconciler) reconcileStorageClient() error {
 		return fmt.Errorf("invalid provider endpoint, empty string")
 	}
 
-	providerEndpoint, err := url.ParseRequestURI(r.dataFoundationClientSpec.providerEndpoint)
-	if err != nil {
-		return fmt.Errorf("failed to parse %s, %v", r.dataFoundationClientSpec.providerEndpoint, err)
-	}
-	if providerEndpoint.Host == "" {
-		return fmt.Errorf("invalid provider endpoint %s, does not contain host", r.dataFoundationClientSpec.providerEndpoint)
-	}
-
 	if r.dataFoundationClientSpec.onboardingTicket == "" {
 		return fmt.Errorf("invalid onboarding ticket, empty string")
 
 	}
-	_, err = r.CreateOrUpdate(&r.storageClient, func() error {
+	_, err := r.CreateOrUpdate(&r.storageClient, func() error {
 		if err := r.own(&r.storageClient, true); err != nil {
 			return err
 		}
