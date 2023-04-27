@@ -337,9 +337,16 @@ func pluginSetupWatches(controllerBuilder *builder.Builder) {
 
 // This function is a placeholder for offering plugin integration
 func pluginGetDesiredOperatorGroupSpec(r *ManagedFusionOfferingReconciler) opv1.OperatorGroupSpec {
-	return opv1.OperatorGroupSpec{
-		TargetNamespaces: []string{r.namespace},
+	var desiredOperatorGroupSpec opv1.OperatorGroupSpec
+	switch r.managedFusionOffering.Spec.Kind {
+	case v1alpha1.KindDataFoundation:
+		desiredOperatorGroupSpec = opv1.OperatorGroupSpec{
+			TargetNamespaces: []string{r.namespace},
+		}
+	case v1alpha1.KindDataFoundationClient:
+		desiredOperatorGroupSpec = opv1.OperatorGroupSpec{}
 	}
+	return desiredOperatorGroupSpec
 }
 
 // This function is a placeholder for offering plugin integration
