@@ -65,12 +65,11 @@ type dataFoundationReconciler struct {
 	ocsInitialization              ocsv1.OCSInitialization
 }
 
-//+kubebuilder:rbac:groups=ocs.openshift.io,namespace=system,resources=storageclusters,verbs=get;list;watch;create;update;patch;delete
-//+kubebuilder:rbac:groups=ocs.openshift.io,namespace=system,resources=ocsinitializations,verbs=get;list;watch;update;patch
-//+kubebuilder:rbac:groups=ocs.openshift.io,namespace=system,resources=storageconsumers,verbs=get;list;watch
+//+kubebuilder:rbac:groups=ocs.openshift.io,resources=storageclusters,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=ocs.openshift.io,resources=ocsinitializations,verbs=get;list;watch;update;patch;delete
+//+kubebuilder:rbac:groups=ocs.openshift.io,resources=storageconsumers,verbs=get;list;watch
 //+kubebuilder:rbac:groups=network.openshift.io,resources=ingressnetworkpolicies,verbs=create;get;list;watch;update
-//+kubebuilder:rbac:groups=operators.coreos.com,namespace=system,resources=clusterserviceversions,verbs=get;list;watch;delete;update;patch
-//+kubebuilder:rbac:groups=ocs.openshift.io,namespace=system,resources=ocsinitializations,verbs=get;list;watch;update;patch;delete
+//+kubebuilder:rbac:groups=operators.coreos.com,resources=clusterserviceversions,verbs=get;list;watch;delete;update;patch
 
 func dfSetupWatches(controllerBuilder *builder.Builder) {
 	csvPredicates := builder.WithPredicates(
