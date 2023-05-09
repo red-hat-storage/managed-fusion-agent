@@ -17,6 +17,7 @@ limitations under the License.
 package utils
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -172,4 +173,12 @@ func HTTPGetAndParseBody(endpoint string) (string, error) {
 		return "", fmt.Errorf("Failed to read response body: %v", err)
 	}
 	return string(body), nil
+}
+
+func ToJsonOrDie(value interface{}) []byte {
+	if bytes, err := json.Marshal(value); err == nil {
+		return bytes
+	} else {
+		panic(err)
+	}
 }

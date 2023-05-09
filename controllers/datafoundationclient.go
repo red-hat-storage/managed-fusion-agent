@@ -6,7 +6,9 @@ import (
 
 	opv1a1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
 	v1alpha1 "github.com/red-hat-storage/managed-fusion-agent/api/v1alpha1"
+	"github.com/red-hat-storage/managed-fusion-agent/utils"
 	ocsclient "github.com/red-hat-storage/ocs-client-operator/api/v1alpha1"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -23,15 +25,17 @@ type dataFoundationClientSpec struct {
 type dataFoundationClientReconciler struct {
 	*ManagedFusionOfferingReconciler
 
-	offering                      *v1alpha1.ManagedFusionOffering
-	dataFoundationClientSpec      dataFoundationClientSpec
-	storageClient                 ocsclient.StorageClient
-	defaultBlockStorageClassClaim ocsclient.StorageClassClaim
-	defaultFSStorageClassClaim    ocsclient.StorageClassClaim
+	offering                         *v1alpha1.ManagedFusionOffering
+	dataFoundationClientSpec         dataFoundationClientSpec
+	storageClient                    ocsclient.StorageClient
+	defaultBlockStorageClassClaim    ocsclient.StorageClassClaim
+	defaultFSStorageClassClaim       ocsclient.StorageClassClaim
+	csiKMSConnectionDetailsConfigMap corev1.ConfigMap
 }
 
 const (
-	ocsClientOperatorName = "ocs-client-operator"
+	ocsClientOperatorName                = "ocs-client-operator"
+	csiKMSConnectionDetailsConfigMapName = "csi-kms-connection-details"
 )
 
 //+kubebuilder:rbac:groups=ocs.openshift.io,resources=storageclients,verbs=get;list;watch;create;update;patch;delete
@@ -49,7 +53,8 @@ func dfcSetupWatches(controllerBuilder *builder.Builder) {
 	controllerBuilder.
 		Owns(&opv1a1.ClusterServiceVersion{}, csvPredicates).
 		Owns(&ocsclient.StorageClient{}).
-		Owns(&ocsclient.StorageClassClaim{})
+		Owns(&ocsclient.StorageClassClaim{}).
+		Owns(&corev1.ConfigMap{})
 }
 
 func DFCAddToScheme(scheme *runtime.Scheme) {
@@ -76,6 +81,9 @@ func (r *dataFoundationClientReconciler) initReconciler(reconciler *ManagedFusio
 	r.defaultBlockStorageClassClaim.Name = "ocs-storagecluster-ceph-rbd"
 
 	r.defaultFSStorageClassClaim.Name = "ocs-storagecluster-cephfs"
+
+	r.csiKMSConnectionDetailsConfigMap.Name = csiKMSConnectionDetailsConfigMapName
+	r.csiKMSConnectionDetailsConfigMap.Namespace = offering.Namespace
 }
 
 func (r *dataFoundationClientReconciler) parseSpec(offering *v1alpha1.ManagedFusionOffering) error {
@@ -127,6 +135,9 @@ func (r *dataFoundationClientReconciler) reconcilePhases() (ctrl.Result, error) 
 			return ctrl.Result{}, err
 		}
 		if err := r.reconcileDefaultFSStorageClassClaim(); err != nil {
+			return ctrl.Result{}, err
+		}
+		if err := r.reconcileCSIKMSConnectionDetailsConfigMap(); err != nil {
 			return ctrl.Result{}, err
 		}
 		return ctrl.Result{}, nil
@@ -204,6 +215,35 @@ func (r *dataFoundationClientReconciler) reconcileDefaultFSStorageClassClaim() e
 	})
 	if err != nil {
 		return fmt.Errorf("unable to create/update Default FileSystem StorageClassClaim: %v", err)
+	}
+
+	return nil
+}
+
+func (r *dataFoundationClientReconciler) reconcileCSIKMSConnectionDetailsConfigMap() error {
+	r.Log.Info(fmt.Sprintf("Reconciling %s configMap", csiKMSConnectionDetailsConfigMapName))
+
+	_, err := r.CreateOrUpdate(&r.csiKMSConnectionDetailsConfigMap, func() error {
+		if err := r.own(&r.csiKMSConnectionDetailsConfigMap, true); err != nil {
+			return err
+		}
+
+		awsStsMetadataTestAsString := string(
+			utils.ToJsonOrDie(
+				map[string]string{
+					"encryptionKMSType": "aws-sts-metadata",
+					"secretName":        "ceph-csi-aws-credentials",
+				},
+			),
+		)
+		r.csiKMSConnectionDetailsConfigMap.Data = map[string]string{
+			"aws-sts-metadata-test": awsStsMetadataTestAsString,
+		}
+
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("Failed to create or update %s config map: %v", csiKMSConnectionDetailsConfigMapName, err)
 	}
 
 	return nil
