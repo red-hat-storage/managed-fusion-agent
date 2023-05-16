@@ -3,12 +3,15 @@ package controllers
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	opv1a1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
 	v1alpha1 "github.com/red-hat-storage/managed-fusion-agent/api/v1alpha1"
 	"github.com/red-hat-storage/managed-fusion-agent/utils"
 	ocsclient "github.com/red-hat-storage/ocs-client-operator/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
+	storagev1 "k8s.io/api/storage/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -34,13 +37,20 @@ type dataFoundationClientReconciler struct {
 }
 
 const (
-	ocsClientOperatorName                = "ocs-client-operator"
 	csiKMSConnectionDetailsConfigMapName = "csi-kms-connection-details"
+	ocsClientOperatorName                = "ocs-client-operator"
+	defaultBlockStorageClassClaimName    = "ocs-storagecluster-ceph-rbd"
+	defaultFSStorageClassClaimName       = "ocs-storagecluster-cephfs"
+	defaultStorageClientName             = "ocs-storageclient"
+	ocsCephFsProvisionerSuffix           = ".cephfs.csi.ceph.com"
+	ocsRBDProvisionerSuffix              = ".rbd.csi.ceph.com"
 )
 
 //+kubebuilder:rbac:groups=ocs.openshift.io,resources=storageclients,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=ocs.openshift.io,resources=storageclassclaims,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=operators.coreos.com,resources=clusterserviceversions,verbs=get;list;watch;delete;update;patch
+//+kubebuilder:rbac:groups="",resources=persistentvolumes,verbs=get;list;watch
+//+kubebuilder:rbac:groups="storage.k8s.io",resources=storageclass,verbs=get;list;watch
 
 func dfcSetupWatches(controllerBuilder *builder.Builder) {
 	csvPredicates := builder.WithPredicates(
@@ -75,12 +85,12 @@ func (r *dataFoundationClientReconciler) initReconciler(reconciler *ManagedFusio
 	r.ManagedFusionOfferingReconciler = reconciler
 	r.offering = offering
 
-	r.storageClient.Name = "ocs-storageclient"
+	r.storageClient.Name = defaultStorageClientName
 	r.storageClient.Namespace = offering.Namespace
 
-	r.defaultBlockStorageClassClaim.Name = "ocs-storagecluster-ceph-rbd"
+	r.defaultBlockStorageClassClaim.Name = defaultBlockStorageClassClaimName
 
-	r.defaultFSStorageClassClaim.Name = "ocs-storagecluster-cephfs"
+	r.defaultFSStorageClassClaim.Name = defaultFSStorageClassClaimName
 
 	r.csiKMSConnectionDetailsConfigMap.Name = csiKMSConnectionDetailsConfigMapName
 	r.csiKMSConnectionDetailsConfigMap.Namespace = offering.Namespace
@@ -123,6 +133,23 @@ func (r *dataFoundationClientReconciler) parseSpec(offering *v1alpha1.ManagedFus
 
 func (r *dataFoundationClientReconciler) reconcilePhases() (ctrl.Result, error) {
 	if !r.offering.DeletionTimestamp.IsZero() {
+		if found, err := r.hasOCSVolumes(); err != nil {
+			return ctrl.Result{}, err
+		} else if found {
+			r.Log.Info("PVs provisioned by ODF  storage classes exists, cannot proceed with uninstallation")
+			return ctrl.Result{Requeue: true, RequeueAfter: 10 * time.Second}, nil
+		}
+		r.Log.Info("issuing a delete for Default StorageClassClaims")
+		if err := r.delete(&r.defaultBlockStorageClassClaim); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to issue a delete for defaultBlockStorageClassClaim: %v", err)
+		}
+		if err := r.delete(&r.defaultFSStorageClassClaim); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to issue a delete for defaultFSStorageClassClaim: %v", err)
+		}
+		r.Log.Info("issuing a delete for StorageClient")
+		if err := r.delete(&r.storageClient); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to issue a delete for Storage Client: %v", err)
+		}
 		return ctrl.Result{}, nil
 	} else {
 		if err := r.reconcileCSV(); err != nil {
@@ -247,4 +274,53 @@ func (r *dataFoundationClientReconciler) reconcileCSIKMSConnectionDetailsConfigM
 	}
 
 	return nil
+}
+
+func (r *dataFoundationClientReconciler) hasOCSVolumes() (bool, error) {
+	storageClassList := &storagev1.StorageClassList{}
+	if err := r.list(storageClassList); err != nil {
+		return false, fmt.Errorf("failed to list Storage Classes: %v", err)
+	}
+	ocsStorageClass := map[string]bool{}
+	rbdProvisionerName := r.offering.Namespace + ocsRBDProvisionerSuffix
+	fsProvisionerName := r.offering.Namespace + ocsCephFsProvisionerSuffix
+	for i := range storageClassList.Items {
+		storageClass := storageClassList.Items[i]
+		if storageClass.Provisioner == fsProvisionerName || storageClass.Provisioner == rbdProvisionerName {
+			ocsStorageClass[storageClass.Name] = true
+		}
+	}
+	pvList := &corev1.PersistentVolumeList{}
+	pvCount := 0
+	if err := r.UnrestrictedClient.List(r.ctx, pvList); err != nil {
+		return false, fmt.Errorf("failed to list persistent volumes: %v", err)
+	}
+	for i := range pvList.Items {
+		scName := pvList.Items[i].Spec.StorageClassName
+		if ocsStorageClass[scName] {
+			pvCount++
+		}
+	}
+	if pvCount > 0 {
+		r.Log.Info(fmt.Sprintf("Current count of PVs blocking uninstallation: %v", pvCount))
+		return true, nil
+	}
+
+	return false, nil
+}
+
+func dfcIsReadyToBeRemoved(r *ManagedFusionOfferingReconciler, offering *v1alpha1.ManagedFusionOffering) (bool, error) {
+	storageClient := &ocsclient.StorageClient{}
+	storageClient.Name = defaultStorageClientName
+	storageClient.Namespace = offering.Namespace
+
+	if err := r.get(storageClient); err != nil {
+		if errors.IsNotFound(err) {
+			return true, nil
+		} else {
+			return false, err
+		}
+	} else {
+		return false, nil
+	}
 }

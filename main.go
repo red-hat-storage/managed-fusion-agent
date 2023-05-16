@@ -133,9 +133,10 @@ func main() {
 	}
 
 	if err = (&controllers.ManagedFusionOfferingReconciler{
-		Client: mgr.GetClient(),
-		Log:    ctrl.Log.WithName("controllers").WithName("ManagedFusionOffering"),
-		Scheme: mgr.GetScheme(),
+		Client:             mgr.GetClient(),
+		UnrestrictedClient: getUnrestrictedClient(),
+		Log:                ctrl.Log.WithName("controllers").WithName("ManagedFusionOffering"),
+		Scheme:             mgr.GetScheme(),
 	}).SetupWithManager(mgr, nil); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "ManagedFusionOffering")
 		os.Exit(1)

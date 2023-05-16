@@ -47,9 +47,10 @@ const (
 
 // ManagedFusionOfferingReconciler reconciles a ManagedFusionOffering object
 type ManagedFusionOfferingReconciler struct {
-	Client client.Client
-	Log    logr.Logger
-	Scheme *runtime.Scheme
+	Client             client.Client
+	UnrestrictedClient client.Client
+	Log                logr.Logger
+	Scheme             *runtime.Scheme
 
 	ctx                   context.Context
 	namespace             string
@@ -315,7 +316,13 @@ func (r *ManagedFusionOfferingReconciler) getCSVByPrefix(name string) (*opv1a1.C
 // All the below functions are placeholder for offering plugin integration
 
 func pluginIsReadyToBeRemoved(reconciler *ManagedFusionOfferingReconciler, offering *v1alpha1.ManagedFusionOffering) (bool, error) {
-	return dfIsReadyToBeRemoved(reconciler, offering)
+	switch offering.Spec.Kind {
+	case v1alpha1.KindDataFoundation:
+		return dfIsReadyToBeRemoved(reconciler, offering)
+	case v1alpha1.KindDataFoundationClient:
+		return dfcIsReadyToBeRemoved(reconciler, offering)
+	}
+	return false, nil
 }
 
 // This function is a placeholder for offering plugin integration
