@@ -11,6 +11,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	"k8s.io/apimachinery/pkg/util/yaml"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -89,9 +90,13 @@ func (r *dataFoundationClientReconciler) initReconciler(reconciler *ManagedFusio
 func (r *dataFoundationClientReconciler) parseSpec(offering *v1alpha1.ManagedFusionOffering) error {
 	r.Log.Info("Parsing ManagedFusionOffering Data Foundation Client spec")
 
+	var dfcSpec dataFoundationClientSpec
+	if err := yaml.Unmarshal([]byte(offering.Spec.Config), &dfcSpec); err != nil {
+		return fmt.Errorf("failed to unmarshal YAML offering config: %v", err)
+	}
+
 	isValid := true
-	onboardingTicket, found := offering.Spec.Config["onboardingTicket"]
-	if !found {
+	if dfcSpec.onboardingTicket == "" {
 		r.Log.Error(
 			fmt.Errorf("missing field: onboardingTicket"),
 			"an error occurred while parsing ManagedFusionOffering Data Foundation Client spec",
@@ -99,8 +104,7 @@ func (r *dataFoundationClientReconciler) parseSpec(offering *v1alpha1.ManagedFus
 		isValid = false
 	}
 
-	providerEndpoint, found := offering.Spec.Config["dataFoundationProviderEndpoint"]
-	if !found {
+	if dfcSpec.providerEndpoint == "" {
 		r.Log.Error(
 			fmt.Errorf("missing field: dataFoundationProviderEndpoint"),
 			"an error occurred while parsing ManagedFusionOffering Data Foundation Client spec",
@@ -114,10 +118,7 @@ func (r *dataFoundationClientReconciler) parseSpec(offering *v1alpha1.ManagedFus
 	}
 	r.Log.Info("parsing ManagedFusionOffering Data Foundation Client spec completed successfuly")
 
-	r.dataFoundationClientSpec = dataFoundationClientSpec{
-		onboardingTicket: onboardingTicket,
-		providerEndpoint: providerEndpoint,
-	}
+	r.dataFoundationClientSpec = dfcSpec
 	return nil
 }
 

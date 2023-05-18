@@ -31,6 +31,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/util/yaml"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -171,6 +172,9 @@ func (r *ManagedFusionOfferingReconciler) reconcilePhases() (reconcile.Result, e
 			}
 		}
 
+		if err := validateOfferingConfig(r.managedFusionOffering); err != nil {
+			return ctrl.Result{}, err
+		}
 		if err := r.reconcileOperatorGroup(); err != nil {
 			return ctrl.Result{}, err
 		}
@@ -188,6 +192,15 @@ func (r *ManagedFusionOfferingReconciler) reconcilePhases() (reconcile.Result, e
 		return result, nil
 	}
 
+}
+
+func validateOfferingConfig(offering *v1alpha1.ManagedFusionOffering) error {
+
+	var offeringConfigYaml interface{}
+	if err := yaml.Unmarshal([]byte(offering.Spec.Config), &offeringConfigYaml); err != nil {
+		return fmt.Errorf("invalid yaml found in ManagedFusionOffering config: %v", err)
+	}
+	return nil
 }
 
 func (r *ManagedFusionOfferingReconciler) reconcileOperatorGroup() error {

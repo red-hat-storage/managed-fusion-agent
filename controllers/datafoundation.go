@@ -17,7 +17,6 @@ package controllers
 import (
 	"fmt"
 	"math"
-	"strconv"
 	"strings"
 	"time"
 
@@ -35,6 +34,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	"k8s.io/apimachinery/pkg/util/yaml"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -203,26 +203,20 @@ func (r *dataFoundationReconciler) reconcilePhases() (ctrl.Result, error) {
 func (r *dataFoundationReconciler) parseSpec(offering *v1alpha1.ManagedFusionOffering) error {
 	r.Log.Info("Parsing ManagedFusionOffering Data Foundation spec")
 
+	var dfSpec dataFoundationSpec
+	if err := yaml.Unmarshal([]byte(offering.Spec.Config), &dfSpec); err != nil {
+		return fmt.Errorf("failed to unmarshal YAML offering config: %v", err)
+	}
 	isValid := true
-	var err error
-	var usableCapacityInTiB int
-	usableCapacityInTiBAsString, found := offering.Spec.Config["usableCapacityInTiB"]
-	if !found {
+	if dfSpec.usableCapacityInTiB == 0 {
 		r.Log.Error(
-			fmt.Errorf("missing field: usableCapacityInTiB"),
-			"an error occurred while parsing ManagedFusionOffering Data Foundation spec",
-		)
-		isValid = false
-	} else if usableCapacityInTiB, err = strconv.Atoi(usableCapacityInTiBAsString); err != nil {
-		r.Log.Error(
-			fmt.Errorf("error parsing usableCapacityInTib: %v", err),
+			fmt.Errorf("invalid or missing field: usableCapacityInTiB"),
 			"an error occurred while parsing ManagedFusionOffering Data Foundation spec",
 		)
 		isValid = false
 	}
 
-	onboardingValidationKeyAsString, found := offering.Spec.Config["onboardingValidationKey"]
-	if !found {
+	if dfSpec.onboardingValidationKey == "" {
 		r.Log.Error(
 			fmt.Errorf("missing field: onboardingValidationKey"),
 			"an error occurred while parsing ManagedFusionOffering Data Foundation spec",
@@ -236,10 +230,7 @@ func (r *dataFoundationReconciler) parseSpec(offering *v1alpha1.ManagedFusionOff
 	}
 	r.Log.Info("parsing ManagedFusionOffering Data Foundation spec completed successfuly")
 
-	r.spec = dataFoundationSpec{
-		usableCapacityInTiB:     usableCapacityInTiB,
-		onboardingValidationKey: onboardingValidationKeyAsString,
-	}
+	r.spec = dfSpec
 	return nil
 }
 
