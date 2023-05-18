@@ -27,7 +27,7 @@ type dataFoundationClientReconciler struct {
 	*ManagedFusionOfferingReconciler
 
 	offering                         *v1alpha1.ManagedFusionOffering
-	dataFoundationClientSpec         dataFoundationClientSpec
+	spec                             dataFoundationClientSpec
 	storageClient                    ocsclient.StorageClient
 	defaultBlockStorageClassClaim    ocsclient.StorageClassClaim
 	defaultFSStorageClassClaim       ocsclient.StorageClassClaim
@@ -73,13 +73,15 @@ func DFCAddToScheme(scheme *runtime.Scheme) {
 	utilruntime.Must(ocsclient.AddToScheme(scheme))
 }
 
-func dfcReconcile(offeringReconciler *ManagedFusionOfferingReconciler, offering *v1alpha1.ManagedFusionOffering) (ctrl.Result, error) {
+func dfcGetOfferingSpecInstance() *dataFoundationClientSpec {
+	return &dataFoundationClientSpec{}
+}
+
+func dfcReconcile(offeringReconciler *ManagedFusionOfferingReconciler, offering *v1alpha1.ManagedFusionOffering, offeringSpec interface{}) (ctrl.Result, error) {
 	r := dataFoundationClientReconciler{}
 	r.initReconciler(offeringReconciler, offering)
+	r.spec = offeringSpec.(dataFoundationClientSpec)
 
-	if err := r.parseSpec(offering); err != nil {
-		return ctrl.Result{}, err
-	}
 	return r.reconcilePhases()
 }
 
@@ -98,41 +100,6 @@ func (r *dataFoundationClientReconciler) initReconciler(reconciler *ManagedFusio
 	r.csiKMSConnectionDetailsConfigMap.Namespace = offering.Namespace
 
 	r.availableCRDs = reconciler.AvailableCRDs
-}
-
-func (r *dataFoundationClientReconciler) parseSpec(offering *v1alpha1.ManagedFusionOffering) error {
-	r.Log.Info("Parsing ManagedFusionOffering Data Foundation Client spec")
-
-	isValid := true
-	onboardingTicket, found := offering.Spec.Config["onboardingTicket"]
-	if !found {
-		r.Log.Error(
-			fmt.Errorf("missing field: onboardingTicket"),
-			"an error occurred while parsing ManagedFusionOffering Data Foundation Client spec",
-		)
-		isValid = false
-	}
-
-	providerEndpoint, found := offering.Spec.Config["dataFoundationProviderEndpoint"]
-	if !found {
-		r.Log.Error(
-			fmt.Errorf("missing field: dataFoundationProviderEndpoint"),
-			"an error occurred while parsing ManagedFusionOffering Data Foundation Client spec",
-		)
-		isValid = false
-	}
-
-	if !isValid {
-		r.Log.Info("parsing ManagedFusionOffering Data Foundation Client spec failed")
-		return fmt.Errorf("invalid ManagedFusionOffering Data Foundation Client spec")
-	}
-	r.Log.Info("parsing ManagedFusionOffering Data Foundation Client spec completed successfuly")
-
-	r.dataFoundationClientSpec = dataFoundationClientSpec{
-		onboardingTicket: onboardingTicket,
-		providerEndpoint: providerEndpoint,
-	}
-	return nil
 }
 
 func (r *dataFoundationClientReconciler) reconcilePhases() (ctrl.Result, error) {
@@ -181,11 +148,11 @@ func (r *dataFoundationClientReconciler) reconcilePhases() (ctrl.Result, error) 
 func (r *dataFoundationClientReconciler) reconcileStorageClient() error {
 	r.Log.Info("Reconciling StorageClient")
 
-	if r.dataFoundationClientSpec.providerEndpoint == "" {
+	if r.spec.providerEndpoint == "" {
 		return fmt.Errorf("invalid provider endpoint, empty string")
 	}
 
-	if r.dataFoundationClientSpec.onboardingTicket == "" {
+	if r.spec.onboardingTicket == "" {
 		return fmt.Errorf("invalid onboarding ticket, empty string")
 
 	}
@@ -193,8 +160,8 @@ func (r *dataFoundationClientReconciler) reconcileStorageClient() error {
 		if err := r.own(&r.storageClient, true); err != nil {
 			return err
 		}
-		r.storageClient.Spec.OnboardingTicket = r.dataFoundationClientSpec.onboardingTicket
-		r.storageClient.Spec.StorageProviderEndpoint = r.dataFoundationClientSpec.providerEndpoint
+		r.storageClient.Spec.OnboardingTicket = r.spec.onboardingTicket
+		r.storageClient.Spec.StorageProviderEndpoint = r.spec.providerEndpoint
 		return nil
 	})
 	if err != nil {
