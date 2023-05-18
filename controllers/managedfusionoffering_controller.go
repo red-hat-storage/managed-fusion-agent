@@ -19,6 +19,7 @@ package controllers
 import (
 	"context"
 	"fmt"
+	"k8s.io/apimachinery/pkg/util/yaml"
 	"strings"
 
 	"github.com/go-logr/logr"
@@ -183,7 +184,12 @@ func (r *ManagedFusionOfferingReconciler) reconcilePhases() (reconcile.Result, e
 		}
 	}
 
-	if result, err := pluginReconcile(r, r.managedFusionOffering); err != nil {
+	offeringSpec := pluginGetDesiredOfferingSpec(r)
+	if err := yaml.Unmarshal([]byte(r.managedFusionOffering.Spec.Config), offeringSpec); err != nil {
+		return ctrl.Result{}, fmt.Errorf("invalid yaml found in ManagedFusionOffering config: %v", err)
+	}
+
+	if result, err := pluginReconcile(r, r.managedFusionOffering, offeringSpec); err != nil {
 		return ctrl.Result{}, fmt.Errorf("an error was encountered during reconcile: %v", err)
 	} else {
 		return result, nil
@@ -319,12 +325,12 @@ func pluginIsReadyToBeRemoved(reconciler *ManagedFusionOfferingReconciler, offer
 }
 
 // This function is a placeholder for offering plugin integration
-func pluginReconcile(reconciler *ManagedFusionOfferingReconciler, offering *v1alpha1.ManagedFusionOffering) (ctrl.Result, error) {
+func pluginReconcile(reconciler *ManagedFusionOfferingReconciler, offering *v1alpha1.ManagedFusionOffering, offeringSpec interface{}) (ctrl.Result, error) {
 	switch offering.Spec.Kind {
 	case v1alpha1.KindDataFoundation:
-		return dfReconcile(reconciler, offering)
+		return dfReconcile(reconciler, offering, offeringSpec)
 	case v1alpha1.KindDataFoundationClient:
-		return dfcReconcile(reconciler, offering)
+		return dfcReconcile(reconciler, offering, offeringSpec)
 	}
 	return ctrl.Result{}, nil
 }
@@ -385,4 +391,17 @@ func pluginGetDesiredSubscriptionSpec(r *ManagedFusionOfferingReconciler) *opv1a
 	}
 
 	return desiredSubscription
+}
+
+// This function is a placeholder for offering plugin integration
+func pluginGetDesiredOfferingSpec(r *ManagedFusionOfferingReconciler) interface{} {
+	var offeringSpec interface{}
+
+	switch r.managedFusionOffering.Spec.Kind {
+	case v1alpha1.KindDataFoundation:
+		offeringSpec = dfGetOfferingSpecInstance()
+	case v1alpha1.KindDataFoundationClient:
+		offeringSpec = dfcGetOfferingSpecInstance()
+	}
+	return offeringSpec
 }
