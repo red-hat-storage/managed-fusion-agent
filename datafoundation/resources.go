@@ -27,11 +27,11 @@ var resourceRequirements = map[string]corev1.ResourceRequirements{
 	"ocs-operator": {
 		Limits: corev1.ResourceList{
 			"cpu":    resource.MustParse("200m"),
-			"memory": resource.MustParse("800Mi"),
+			"memory": resource.MustParse("200Mi"),
 		},
 		Requests: corev1.ResourceList{
 			"cpu":    resource.MustParse("200m"),
-			"memory": resource.MustParse("800Mi"),
+			"memory": resource.MustParse("200Mi"),
 		},
 	},
 	"rook-ceph-operator": {
