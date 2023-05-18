@@ -35,6 +35,13 @@ var resourceSelector = metav1.LabelSelector{
 	},
 }
 
+var namespaceSelector = metav1.LabelSelector{
+	MatchExpressions: []metav1.LabelSelectorRequirement{{
+		Key:      "kubernetes.io/metadata.name",
+		Operator: metav1.LabelSelectorOpExists,
+	}},
+}
+
 const (
 	//TODO: Construct monitoring dns name dynamically based on AWS and IBM Cloud Monitoring regions
 	RemoteWriteDNSName                  string = "ingest.us-south.monitoring.cloud.ibm.com"
@@ -77,13 +84,15 @@ var alerts = []string{
 var PrometheusTemplate = promv1.Prometheus{
 	Spec: promv1.PrometheusSpec{
 		CommonPrometheusFields: promv1.CommonPrometheusFields{
-			ExternalLabels:         map[string]string{},
-			ServiceAccountName:     "prometheus-k8s",
-			ServiceMonitorSelector: &resourceSelector,
-			PodMonitorSelector:     &resourceSelector,
-			Resources:              utils.GetResourceRequirements("prometheus"),
-			ListenLocal:            true,
-			EnableAdminAPI:         false,
+			ExternalLabels:                  map[string]string{},
+			ServiceAccountName:              "prometheus-k8s",
+			ServiceMonitorSelector:          &resourceSelector,
+			ServiceMonitorNamespaceSelector: &namespaceSelector,
+			PodMonitorSelector:              &resourceSelector,
+			PodMonitorNamespaceSelector:     &namespaceSelector,
+			Resources:                       utils.GetResourceRequirements("prometheus"),
+			ListenLocal:                     true,
+			EnableAdminAPI:                  false,
 			Containers: []corev1.Container{{
 				Name: "kube-rbac-proxy",
 				Args: []string{
@@ -145,7 +154,8 @@ var PrometheusTemplate = promv1.Prometheus{
 				},
 			},
 		},
-		RuleSelector: &resourceSelector,
+		RuleSelector:          &resourceSelector,
+		RuleNamespaceSelector: &namespaceSelector,
 		Alerting: &promv1.AlertingSpec{
 			Alertmanagers: []promv1.AlertmanagerEndpoints{{
 				Namespace: "",
