@@ -709,6 +709,7 @@ func (r *ManagedFusionReconciler) reconcileK8SMetricsServiceMonitor() error {
 		}
 		desired := templates.K8sMetricsServiceMonitorTemplate.DeepCopy()
 		r.k8sMetricsServiceMonitor.Spec = desired.Spec
+		utils.AddLabel(r.k8sMetricsServiceMonitor, monLabelKey, monLabelValue)
 		return nil
 	})
 	if err != nil {
