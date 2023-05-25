@@ -37,9 +37,7 @@ spec:
             description: ManagedFusionOfferingSpec defines the desired state of ManagedFusionOffering
             properties:
               config:
-                additionalProperties:
-                  type: string
-                type: object
+                type: string
               kind:
                 enum:
                 - DF

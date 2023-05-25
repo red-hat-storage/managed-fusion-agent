@@ -17,7 +17,6 @@ package controllers
 import (
 	"fmt"
 	"math"
-	"strconv"
 	"strings"
 	"time"
 
@@ -105,6 +104,10 @@ func DFAddToScheme(scheme *runtime.Scheme) {
 	utilruntime.Must(ocsv1alpha1.AddToScheme(scheme))
 }
 
+func dfGetOfferingSpecInstance() *dataFoundationSpec {
+	return &dataFoundationSpec{}
+}
+
 func dfIsReadyToBeRemoved(r *ManagedFusionOfferingReconciler, offering *v1alpha1.ManagedFusionOffering) (bool, error) {
 	sc := &ocsv1.StorageCluster{}
 	sc.Name = storageClusterName
@@ -121,15 +124,11 @@ func dfIsReadyToBeRemoved(r *ManagedFusionOfferingReconciler, offering *v1alpha1
 	}
 }
 
-func dfReconcile(offeringReconciler *ManagedFusionOfferingReconciler, offering *v1alpha1.ManagedFusionOffering) (ctrl.Result, error) {
+func dfReconcile(offeringReconciler *ManagedFusionOfferingReconciler, offering *v1alpha1.ManagedFusionOffering, offeringSpec interface{}) (ctrl.Result, error) {
 	// Set up the datafoundation sub-reconciler
 	r := dataFoundationReconciler{}
 	r.initReconciler(offeringReconciler, offering)
-
-	// parse and validate the offering configuration spec
-	if err := r.parseSpec(offering); err != nil {
-		return ctrl.Result{}, err
-	}
+	r.spec = offeringSpec.(dataFoundationSpec)
 
 	// Reconcile based on desired state
 	return r.reconcilePhases()
@@ -234,51 +233,12 @@ func (r *dataFoundationReconciler) reconcilePhases() (ctrl.Result, error) {
 	return ctrl.Result{}, nil
 }
 
-func (r *dataFoundationReconciler) parseSpec(offering *v1alpha1.ManagedFusionOffering) error {
-	r.Log.Info("Parsing ManagedFusionOffering Data Foundation spec")
-
-	isValid := true
-	var err error
-	var usableCapacityInTiB int
-	usableCapacityInTiBAsString, found := offering.Spec.Config["usableCapacityInTiB"]
-	if !found {
-		r.Log.Error(
-			fmt.Errorf("missing field: usableCapacityInTiB"),
-			"an error occurred while parsing ManagedFusionOffering Data Foundation spec",
-		)
-		isValid = false
-	} else if usableCapacityInTiB, err = strconv.Atoi(usableCapacityInTiBAsString); err != nil {
-		r.Log.Error(
-			fmt.Errorf("error parsing usableCapacityInTib: %v", err),
-			"an error occurred while parsing ManagedFusionOffering Data Foundation spec",
-		)
-		isValid = false
-	}
-
-	onboardingValidationKeyAsString, found := offering.Spec.Config["onboardingValidationKey"]
-	if !found {
-		r.Log.Error(
-			fmt.Errorf("missing field: onboardingValidationKey"),
-			"an error occurred while parsing ManagedFusionOffering Data Foundation spec",
-		)
-		isValid = false
-	}
-
-	if !isValid {
-		r.Log.Info("parsing ManagedFusionOffering Data Foundation spec failed")
-		return fmt.Errorf("invalid ManagedFusionOffering Data Foundation spec")
-	}
-	r.Log.Info("parsing ManagedFusionOffering Data Foundation spec completed successfuly")
-
-	r.spec = dataFoundationSpec{
-		usableCapacityInTiB:     usableCapacityInTiB,
-		onboardingValidationKey: onboardingValidationKeyAsString,
-	}
-	return nil
-}
-
 func (r *dataFoundationReconciler) reconcileOnboardingValidationSecret() error {
 	r.Log.Info("Reconciling onboardingValidationKey secret")
+
+	if r.spec.onboardingValidationKey == "" {
+		return fmt.Errorf("invalid onboardingValidationKey ticket, empty string")
+	}
 
 	_, err := r.CreateOrUpdate(&r.onboardingValidationKeySecret, func() error {
 		if err := r.own(&r.onboardingValidationKeySecret, true); err != nil {
@@ -301,6 +261,10 @@ func (r *dataFoundationReconciler) reconcileOnboardingValidationSecret() error {
 
 func (r *dataFoundationReconciler) reconcileStorageCluster() error {
 	r.Log.Info("Reconciling StorageCluster")
+
+	if r.spec.usableCapacityInTiB <= 0 {
+		return fmt.Errorf("invalid or missing field: usableCapacityInTiB, provided value is %v", r.spec.usableCapacityInTiB)
+	}
 
 	_, err := r.CreateOrUpdate(&r.storageCluster, func() error {
 		if err := r.own(&r.storageCluster, true); err != nil {
