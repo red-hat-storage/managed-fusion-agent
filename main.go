@@ -19,7 +19,6 @@ package main
 import (
 	"context"
 	"flag"
-	"fmt"
 	"os"
 
 	opv1 "github.com/operator-framework/api/pkg/operators/v1"
@@ -29,7 +28,6 @@ import (
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/types"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 
@@ -86,6 +84,8 @@ func addAllSchemes(scheme *runtime.Scheme) {
 	utilruntime.Must(opv1.AddToScheme(scheme))
 
 	utilruntime.Must(ovnv1.AddToScheme(scheme))
+
+	utilruntime.Must(apiextensionsv1.AddToScheme(scheme))
 	// +kubebuilder:scaffold:scheme
 
 	pluginAddToScheme(scheme)
@@ -119,13 +119,15 @@ func main() {
 		os.Exit(1)
 	}
 
+	availableCRDs := mapCRDAvailability()
+
 	if err = (&controllers.ManagedFusionReconciler{
 		Client:                       mgr.GetClient(),
 		UnrestrictedClient:           getUnrestrictedClient(),
 		Log:                          ctrl.Log.WithName("controllers").WithName("ManagedFusion"),
 		Scheme:                       mgr.GetScheme(),
 		Namespace:                    namespace,
-		AvailableCRDs:                mapCRDAvailability(controllers.EgressFirewallCRD, controllers.EgressNetworkPolicyCRD),
+		AvailableCRDs:                availableCRDs,
 		CustomerNotificationHTMLPath: "templates/customernotification.html",
 	}).SetupWithManager(mgr, nil); err != nil {
 		setupLog.Error(err, "Unable to create controller", "controller", "ManagedFusion")
@@ -133,9 +135,10 @@ func main() {
 	}
 
 	if err = (&controllers.ManagedFusionOfferingReconciler{
-		Client: mgr.GetClient(),
-		Log:    ctrl.Log.WithName("controllers").WithName("ManagedFusionOffering"),
-		Scheme: mgr.GetScheme(),
+		Client:        mgr.GetClient(),
+		Log:           ctrl.Log.WithName("controllers").WithName("ManagedFusionOffering"),
+		Scheme:        mgr.GetScheme(),
+		AvailableCRDs: availableCRDs,
 	}).SetupWithManager(mgr, nil); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "ManagedFusionOffering")
 		os.Exit(1)
@@ -163,7 +166,13 @@ func getUnrestrictedClient() client.Client {
 	return k8sClient
 }
 
-func mapCRDAvailability(crdNames ...string) map[string]bool {
+// This function is a placeholder for offering plugin integration
+func pluginAddToScheme(scheme *runtime.Scheme) {
+	controllers.DFAddToScheme(scheme)
+	controllers.DFCAddToScheme(scheme)
+}
+
+func mapCRDAvailability() map[string]bool {
 
 	var options client.Options
 	options.Scheme = runtime.NewScheme()
@@ -177,23 +186,17 @@ func mapCRDAvailability(crdNames ...string) map[string]bool {
 
 	CRDExist := map[string]bool{}
 
-	for _, crdName := range crdNames {
-		crd := apiextensionsv1.CustomResourceDefinition{}
-		err = k8sClient.Get(context.Background(), types.NamespacedName{Name: crdName}, &crd)
+	crds := apiextensionsv1.CustomResourceDefinitionList{}
+	err = k8sClient.List(context.Background(), &crds)
 
-		if err != nil && !errors.IsNotFound(err) {
-			setupLog.Error(err, fmt.Sprintf("Error Getting CRD for %s", crdName))
-			os.Exit(1)
-		}
+	if err != nil && !errors.IsNotFound(err) {
+		setupLog.Error(err, "Error Getting CRDs installed on the cluster")
+		os.Exit(1)
+	}
 
-		CRDExist[crdName] = crd.UID != ""
+	for i := range crds.Items {
+		CRDExist[crds.Items[i].Name] = true
 	}
 
 	return CRDExist
-}
-
-// This function is a placeholder for offering plugin integration
-func pluginAddToScheme(scheme *runtime.Scheme) {
-	controllers.DFAddToScheme(scheme)
-	controllers.DFCAddToScheme(scheme)
 }
