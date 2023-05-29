@@ -19,15 +19,15 @@ import (
 )
 
 type dataFoundationClientSpec struct {
-	onboardingTicket string
-	providerEndpoint string
+	OnboardingTicket string
+	ProviderEndpoint string
 }
 
 type dataFoundationClientReconciler struct {
 	*ManagedFusionOfferingReconciler
 
 	offering                         *v1alpha1.ManagedFusionOffering
-	spec                             dataFoundationClientSpec
+	spec                             *dataFoundationClientSpec
 	storageClient                    ocsclient.StorageClient
 	defaultBlockStorageClassClaim    ocsclient.StorageClassClaim
 	defaultFSStorageClassClaim       ocsclient.StorageClassClaim
@@ -80,7 +80,7 @@ func dfcGetOfferingSpecInstance() *dataFoundationClientSpec {
 func dfcReconcile(offeringReconciler *ManagedFusionOfferingReconciler, offering *v1alpha1.ManagedFusionOffering, offeringSpec interface{}) (ctrl.Result, error) {
 	r := dataFoundationClientReconciler{}
 	r.initReconciler(offeringReconciler, offering)
-	r.spec = offeringSpec.(dataFoundationClientSpec)
+	r.spec = offeringSpec.(*dataFoundationClientSpec)
 
 	return r.reconcilePhases()
 }
@@ -148,11 +148,11 @@ func (r *dataFoundationClientReconciler) reconcilePhases() (ctrl.Result, error) 
 func (r *dataFoundationClientReconciler) reconcileStorageClient() error {
 	r.Log.Info("Reconciling StorageClient")
 
-	if r.spec.providerEndpoint == "" {
+	if r.spec.ProviderEndpoint == "" {
 		return fmt.Errorf("invalid provider endpoint, empty string")
 	}
 
-	if r.spec.onboardingTicket == "" {
+	if r.spec.OnboardingTicket == "" {
 		return fmt.Errorf("invalid onboarding ticket, empty string")
 
 	}
@@ -160,8 +160,8 @@ func (r *dataFoundationClientReconciler) reconcileStorageClient() error {
 		if err := r.own(&r.storageClient, true); err != nil {
 			return err
 		}
-		r.storageClient.Spec.OnboardingTicket = r.spec.onboardingTicket
-		r.storageClient.Spec.StorageProviderEndpoint = r.spec.providerEndpoint
+		r.storageClient.Spec.OnboardingTicket = r.spec.OnboardingTicket
+		r.storageClient.Spec.StorageProviderEndpoint = r.spec.ProviderEndpoint
 		return nil
 	})
 	if err != nil {
