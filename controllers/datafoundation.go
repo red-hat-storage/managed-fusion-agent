@@ -50,15 +50,15 @@ const (
 )
 
 type dataFoundationSpec struct {
-	usableCapacityInTiB     int
-	onboardingValidationKey string
+	UsableCapacityInTiB     int
+	OnboardingValidationKey string
 }
 
 type dataFoundationReconciler struct {
 	*ManagedFusionOfferingReconciler
 
 	offering                       *v1alpha1.ManagedFusionOffering
-	spec                           dataFoundationSpec
+	spec                           *dataFoundationSpec
 	onboardingValidationKeySecret  corev1.Secret
 	storageCluster                 ocsv1.StorageCluster
 	cephIngressNetworkPolicy       netv1.NetworkPolicy
@@ -128,7 +128,7 @@ func dfReconcile(offeringReconciler *ManagedFusionOfferingReconciler, offering *
 	// Set up the datafoundation sub-reconciler
 	r := dataFoundationReconciler{}
 	r.initReconciler(offeringReconciler, offering)
-	r.spec = offeringSpec.(dataFoundationSpec)
+	r.spec = offeringSpec.(*dataFoundationSpec)
 
 	// Reconcile based on desired state
 	return r.reconcilePhases()
@@ -236,7 +236,7 @@ func (r *dataFoundationReconciler) reconcilePhases() (ctrl.Result, error) {
 func (r *dataFoundationReconciler) reconcileOnboardingValidationSecret() error {
 	r.Log.Info("Reconciling onboardingValidationKey secret")
 
-	if r.spec.onboardingValidationKey == "" {
+	if r.spec.OnboardingValidationKey == "" {
 		return fmt.Errorf("invalid onboardingValidationKey ticket, empty string")
 	}
 
@@ -246,7 +246,7 @@ func (r *dataFoundationReconciler) reconcileOnboardingValidationSecret() error {
 		}
 		onboardingValidationData := fmt.Sprintf(
 			"-----BEGIN PUBLIC KEY-----\n%s\n-----END PUBLIC KEY-----",
-			strings.TrimSpace(r.spec.onboardingValidationKey),
+			strings.TrimSpace(r.spec.OnboardingValidationKey),
 		)
 		r.onboardingValidationKeySecret.Data = map[string][]byte{
 			"key": []byte(onboardingValidationData),
@@ -262,8 +262,8 @@ func (r *dataFoundationReconciler) reconcileOnboardingValidationSecret() error {
 func (r *dataFoundationReconciler) reconcileStorageCluster() error {
 	r.Log.Info("Reconciling StorageCluster")
 
-	if r.spec.usableCapacityInTiB <= 0 {
-		return fmt.Errorf("invalid or missing field: usableCapacityInTiB, provided value is %v", r.spec.usableCapacityInTiB)
+	if r.spec.UsableCapacityInTiB <= 0 {
+		return fmt.Errorf("invalid or missing field: UsableCapacityInTiB, provided value is %v", r.spec.UsableCapacityInTiB)
 	}
 
 	_, err := r.CreateOrUpdate(&r.storageCluster, func() error {
@@ -272,7 +272,7 @@ func (r *dataFoundationReconciler) reconcileStorageCluster() error {
 		}
 
 		// Convert the desired size to the device set count based on the underlaying OSD size
-		desiredDeviceSetCount := int(math.Ceil(float64(r.spec.usableCapacityInTiB) / templates.OSDSizeInTiB))
+		desiredDeviceSetCount := int(math.Ceil(float64(r.spec.UsableCapacityInTiB) / templates.OSDSizeInTiB))
 
 		// Get the storage device set count of the current storage cluster
 		currDeviceSetCount := 0
