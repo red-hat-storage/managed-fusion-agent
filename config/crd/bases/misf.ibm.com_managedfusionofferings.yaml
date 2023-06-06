@@ -45,6 +45,10 @@ spec:
                 type: string
               release:
                 type: string
+            required:
+            - config
+            - kind
+            - release
             type: object
           status:
             description: ManagedFusionOfferingStatus defines the observed state of
