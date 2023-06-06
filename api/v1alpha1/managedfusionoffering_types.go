@@ -30,9 +30,9 @@ const (
 
 // ManagedFusionOfferingSpec defines the desired state of ManagedFusionOffering
 type ManagedFusionOfferingSpec struct {
-	Kind    OfferingKind `json:"kind,omitempty"`
-	Release string       `json:"release,omitempty"`
-	Config  string       `json:"config,omitempty"`
+	Kind    OfferingKind `json:"kind"`
+	Release string       `json:"release"`
+	Config  string       `json:"config"`
 }
 
 // ManagedFusionOfferingStatus defines the observed state of ManagedFusionOffering
