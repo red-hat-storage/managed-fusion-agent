@@ -120,10 +120,11 @@ func main() {
 	}
 
 	availableCRDs := mapCRDAvailability()
+	unrestictedClient := getUnrestrictedClient()
 
 	if err = (&controllers.ManagedFusionReconciler{
 		Client:                       mgr.GetClient(),
-		UnrestrictedClient:           getUnrestrictedClient(),
+		UnrestrictedClient:           unrestictedClient,
 		Log:                          ctrl.Log.WithName("controllers").WithName("ManagedFusion"),
 		Scheme:                       mgr.GetScheme(),
 		Namespace:                    namespace,
@@ -135,10 +136,11 @@ func main() {
 	}
 
 	if err = (&controllers.ManagedFusionOfferingReconciler{
-		Client:        mgr.GetClient(),
-		Log:           ctrl.Log.WithName("controllers").WithName("ManagedFusionOffering"),
-		Scheme:        mgr.GetScheme(),
-		AvailableCRDs: availableCRDs,
+		Client:             mgr.GetClient(),
+		Log:                ctrl.Log.WithName("controllers").WithName("ManagedFusionOffering"),
+		Scheme:             mgr.GetScheme(),
+		AvailableCRDs:      availableCRDs,
+		UnrestrictedClient: unrestictedClient,
 	}).SetupWithManager(mgr, nil); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "ManagedFusionOffering")
 		os.Exit(1)

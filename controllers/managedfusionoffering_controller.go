@@ -19,8 +19,9 @@ package controllers
 import (
 	"context"
 	"fmt"
-	"k8s.io/apimachinery/pkg/util/yaml"
 	"strings"
+
+	"k8s.io/apimachinery/pkg/util/yaml"
 
 	"github.com/go-logr/logr"
 	opv1 "github.com/operator-framework/api/pkg/operators/v1"
@@ -48,10 +49,11 @@ const (
 
 // ManagedFusionOfferingReconciler reconciles a ManagedFusionOffering object
 type ManagedFusionOfferingReconciler struct {
-	Client        client.Client
-	Log           logr.Logger
-	Scheme        *runtime.Scheme
-	AvailableCRDs map[string]bool
+	Client             client.Client
+	Log                logr.Logger
+	Scheme             *runtime.Scheme
+	AvailableCRDs      map[string]bool
+	UnrestrictedClient client.Client
 
 	ctx                   context.Context
 	namespace             string
@@ -274,6 +276,17 @@ func (r *ManagedFusionOfferingReconciler) delete(obj client.Object) error {
 	return nil
 }
 
+func (r *ManagedFusionOfferingReconciler) unrestrictedList(obj client.ObjectList, listOptions ...client.ListOption) error {
+	return r.UnrestrictedClient.List(r.ctx, obj, listOptions...)
+}
+
+func (r *ManagedFusionOfferingReconciler) unrestrictedDelete(obj client.Object) error {
+	if err := r.UnrestrictedClient.Delete(r.ctx, obj); err != nil && !errors.IsNotFound(err) {
+		return err
+	}
+	return nil
+}
+
 func (r *ManagedFusionOfferingReconciler) CreateOrUpdate(obj client.Object, f controllerutil.MutateFn) (controllerutil.OperationResult, error) {
 	return ctrl.CreateOrUpdate(r.ctx, r.Client, obj, f)
 }
@@ -321,7 +334,13 @@ func (r *ManagedFusionOfferingReconciler) getCSVByPrefix(name string) (*opv1a1.C
 // All the below functions are placeholder for offering plugin integration
 
 func pluginIsReadyToBeRemoved(reconciler *ManagedFusionOfferingReconciler, offering *v1alpha1.ManagedFusionOffering) (bool, error) {
-	return dfIsReadyToBeRemoved(reconciler, offering)
+	switch offering.Spec.Kind {
+	case v1alpha1.KindDataFoundation:
+		return dfIsReadyToBeRemoved(reconciler, offering)
+	case v1alpha1.KindDataFoundationClient:
+		return dfcIsReadyToBeRemoved(reconciler, offering)
+	}
+	return false, nil
 }
 
 // This function is a placeholder for offering plugin integration
