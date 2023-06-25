@@ -16,7 +16,9 @@ package controllers
 
 import (
 	"fmt"
+	"k8s.io/apimachinery/pkg/api/resource"
 	"math"
+	"strconv"
 	"strings"
 	"time"
 
@@ -271,12 +273,21 @@ func (r *dataFoundationReconciler) reconcileStorageCluster() error {
 			return err
 		}
 
-		// Convert the desired size to the device set count based on the underlaying OSD size
-		desiredDeviceSetCount := int(math.Ceil(float64(r.spec.UsableCapacityInTiB) / templates.OSDSizeInTiB))
+		// get the desired capacity in TiB planned to be consumed by user in range 1-4TiB
+		desiredOSDSizeInTiB := math.Min(math.Ceil(float64(r.spec.UsableCapacityInTiB)), templates.VerticalScalerUpperBoundInTiB)
 
-		// Get the storage device set count of the current storage cluster
+		// Convert the desired size to the device set count based on the underlying OSD size
+		desiredDeviceSetCount := int(math.Ceil(float64(r.spec.UsableCapacityInTiB)) / desiredOSDSizeInTiB)
+		// Get the storage device set count and OSD size of the current storage cluster
 		currDeviceSetCount := 0
+		currOSDSizeInTiB := 0.0
 		if desiredStorageDeviceSet := findStorageDeviceSet(r.storageCluster.Spec.StorageDeviceSets, defaultDeviceSetName); desiredStorageDeviceSet != nil {
+			// Avoid overflow
+			if len(strconv.Itoa(int(desiredStorageDeviceSet.DataPVCTemplate.Spec.Resources.Requests.Storage().Value()))) <= int(resource.Tera) {
+				return fmt.Errorf("calculating the current OSD size in TiB might result in overflow")
+			}
+			// Get rounded up value and convert to actual
+			currOSDSizeInTiB = float64(desiredStorageDeviceSet.DataPVCTemplate.Spec.Resources.Requests.Storage().ScaledValue(resource.Tera) - 1)
 			currDeviceSetCount = desiredStorageDeviceSet.Count
 		}
 
@@ -287,7 +298,8 @@ func (r *dataFoundationReconciler) reconcileStorageCluster() error {
 			ds = desiredStorageDeviceSet
 		}
 
-		// Prevent downscaling by comparing count from secret and count from storage cluster
+		// Prevent downscaling by comparing OSD size and count from secret and from storage cluster
+		r.setDeviceSetOSDSize(ds, desiredOSDSizeInTiB, currOSDSizeInTiB)
 		r.setDeviceSetCount(ds, desiredDeviceSetCount, currDeviceSetCount)
 		r.storageCluster.Spec = sc.Spec
 
@@ -318,6 +330,21 @@ func (r *dataFoundationReconciler) setDeviceSetCount(deviceSet *ocsv1.StorageDev
 	} else {
 		r.Log.V(-1).Info("Requested storage device set count will result in downscaling, which is not supported. Skipping")
 		deviceSet.Count = currDeviceSetCount
+	}
+}
+
+func (r *dataFoundationReconciler) setDeviceSetOSDSize(ds *ocsv1.StorageDeviceSet, desiredOSDSize float64, currOSDSize float64) {
+	r.Log.Info("Setting storage device set OSD size", "Current", currOSDSize, "New", desiredOSDSize)
+	updatedOSDSize := 0.0
+	if currOSDSize <= desiredOSDSize {
+		updatedOSDSize = desiredOSDSize
+
+	} else {
+		r.Log.V(-1).Info("Requested storage device set OSD size will result in downscaling, which is not supported. Skipping")
+		updatedOSDSize = currOSDSize
+	}
+	ds.DataPVCTemplate.Spec.Resources.Requests = corev1.ResourceList{
+		"storage": resource.MustParse(fmt.Sprintf("%vTi", updatedOSDSize)),
 	}
 }
 

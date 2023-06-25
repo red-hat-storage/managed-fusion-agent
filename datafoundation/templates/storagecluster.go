@@ -27,8 +27,9 @@ import (
 // StorageClusterTemplate is the template that serves as the base for the storage clsuter deployed by the operator
 
 const (
-	OSDSizeInTiB            = 4
-	backingStorageClassName = "default-ocs-storage-class"
+	OSDSizeInTiB                  = 1
+	VerticalScalerUpperBoundInTiB = 4
+	backingStorageClassName       = "default-ocs-storage-class"
 )
 
 var commonTSC corev1.TopologySpreadConstraint = corev1.TopologySpreadConstraint{
