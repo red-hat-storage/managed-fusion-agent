@@ -19,12 +19,15 @@ package controllers
 import (
 	"context"
 	"fmt"
-	"k8s.io/apimachinery/pkg/util/yaml"
 	"strings"
 
+	"k8s.io/apimachinery/pkg/util/yaml"
+
 	"github.com/go-logr/logr"
+	openshiftv1 "github.com/openshift/api/network/v1"
 	opv1 "github.com/operator-framework/api/pkg/operators/v1"
 	opv1a1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
+	ovnv1 "github.com/ovn-org/ovn-kubernetes/go-controller/pkg/crd/egressfirewall/v1"
 	v1alpha1 "github.com/red-hat-storage/managed-fusion-agent/api/v1alpha1"
 	"github.com/red-hat-storage/managed-fusion-agent/utils"
 	corev1 "k8s.io/api/core/v1"
@@ -59,6 +62,8 @@ type ManagedFusionOfferingReconciler struct {
 	operatorGroup         *opv1.OperatorGroup
 	catalogSource         *opv1a1.CatalogSource
 	subscription          *opv1a1.Subscription
+	egressNetworkPolicy   *openshiftv1.EgressNetworkPolicy
+	egressFirewall        *ovnv1.EgressFirewall
 }
 
 //+kubebuilder:rbac:groups=misf.ibm.com,resources={managedfusionofferings,managedfusionofferings/finalizers},verbs=get;list;watch;create;update;patch;delete
@@ -119,6 +124,14 @@ func (r *ManagedFusionOfferingReconciler) initReconciler(ctx context.Context, re
 	r.subscription = &opv1a1.Subscription{}
 	r.subscription.Name = subscriptionName
 	r.subscription.Namespace = req.Namespace
+
+	r.egressNetworkPolicy = &openshiftv1.EgressNetworkPolicy{}
+	r.egressNetworkPolicy.Name = egressNetworkPolicyName
+	r.egressNetworkPolicy.Namespace = req.Namespace
+
+	r.egressFirewall = &ovnv1.EgressFirewall{}
+	r.egressFirewall.Name = egressFirewallName
+	r.egressFirewall.Namespace = req.Namespace
 }
 
 func (r *ManagedFusionOfferingReconciler) reconcilePhases() (reconcile.Result, error) {
@@ -180,6 +193,12 @@ func (r *ManagedFusionOfferingReconciler) reconcilePhases() (reconcile.Result, e
 			return ctrl.Result{}, err
 		}
 		if err := r.reconcileSubscription(); err != nil {
+			return ctrl.Result{}, err
+		}
+		if err := r.reconcileEgressFirewall(); err != nil {
+			return ctrl.Result{}, err
+		}
+		if err := r.reconcileEgressNetworkPolicy(); err != nil {
 			return ctrl.Result{}, err
 		}
 	}
