@@ -18,7 +18,6 @@ import (
 	"fmt"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"math"
-	"strconv"
 	"strings"
 	"time"
 
@@ -52,7 +51,7 @@ const (
 )
 
 type dataFoundationSpec struct {
-	UsableCapacityInTiB     int
+	UsableCapacityInTiB     resource.Quantity
 	OnboardingValidationKey string
 }
 
@@ -264,7 +263,10 @@ func (r *dataFoundationReconciler) reconcileOnboardingValidationSecret() error {
 func (r *dataFoundationReconciler) reconcileStorageCluster() error {
 	r.Log.Info("Reconciling StorageCluster")
 
-	if r.spec.UsableCapacityInTiB <= 0 {
+	UsableCapacityInTiB := r.spec.UsableCapacityInTiB
+	OSDSizeUpperBoundInTiB := templates.OSDSizeUpperBoundInTib
+
+	if UsableCapacityInTiB.CmpInt64(0) <= 0 {
 		return fmt.Errorf("invalid or missing field: UsableCapacityInTiB, provided value is %v", r.spec.UsableCapacityInTiB)
 	}
 
@@ -273,23 +275,15 @@ func (r *dataFoundationReconciler) reconcileStorageCluster() error {
 			return err
 		}
 
-		// get the desired capacity in TiB planned to be consumed by user in range 1-4TiB
-		desiredOSDSizeInTiB := math.Min(math.Ceil(float64(r.spec.UsableCapacityInTiB)), templates.VerticalScalerUpperBoundInTiB)
+		// Get the desired capacity in TiB planned to be consumed by user in range 1-4TiB
+		// Set desired to be the minimum
+		desiredOSDSizeInTiB := UsableCapacityInTiB
+		if OSDSizeUpperBoundInTiB.Cmp(UsableCapacityInTiB) < 0 {
+			desiredOSDSizeInTiB = *OSDSizeUpperBoundInTiB
+		}
 
 		// Convert the desired size to the device set count based on the underlying OSD size
-		desiredDeviceSetCount := int(math.Ceil(float64(r.spec.UsableCapacityInTiB)) / desiredOSDSizeInTiB)
-		// Get the storage device set count and OSD size of the current storage cluster
-		currDeviceSetCount := 0
-		currOSDSizeInTiB := 0.0
-		if desiredStorageDeviceSet := findStorageDeviceSet(r.storageCluster.Spec.StorageDeviceSets, defaultDeviceSetName); desiredStorageDeviceSet != nil {
-			// Avoid overflow
-			if len(strconv.Itoa(int(desiredStorageDeviceSet.DataPVCTemplate.Spec.Resources.Requests.Storage().Value()))) <= int(resource.Tera) {
-				return fmt.Errorf("calculating the current OSD size in TiB might result in overflow")
-			}
-			// Get rounded up value and convert to actual
-			currOSDSizeInTiB = float64(desiredStorageDeviceSet.DataPVCTemplate.Spec.Resources.Requests.Storage().ScaledValue(resource.Tera) - 1)
-			currDeviceSetCount = desiredStorageDeviceSet.Count
-		}
+		desiredDeviceSetCount := int(math.Ceil(UsableCapacityInTiB.AsApproximateFloat64() / desiredOSDSizeInTiB.AsApproximateFloat64()))
 
 		// Get the desired storage device set from storage cluster template
 		sc := templates.StorageClusterTemplate.DeepCopy()
@@ -298,9 +292,14 @@ func (r *dataFoundationReconciler) reconcileStorageCluster() error {
 			ds = desiredStorageDeviceSet
 		}
 
-		// Prevent downscaling by comparing OSD size and count from secret and from storage cluster
-		r.setDeviceSetOSDSize(ds, desiredOSDSizeInTiB, currOSDSizeInTiB)
-		r.setDeviceSetCount(ds, desiredDeviceSetCount, currDeviceSetCount)
+		// Get the storage device set count and OSD size of the current storage cluster
+		if desiredStorageDeviceSet := findStorageDeviceSet(r.storageCluster.Spec.StorageDeviceSets, defaultDeviceSetName); desiredStorageDeviceSet != nil {
+			currOSDSizeInTiB := desiredStorageDeviceSet.DataPVCTemplate.Spec.Resources.Requests.Storage()
+			currDeviceSetCount := desiredStorageDeviceSet.Count
+			// Prevent downscaling by comparing OSD size and count from secret and from storage cluster
+			r.setDeviceSetProperties(ds, &desiredOSDSizeInTiB, currOSDSizeInTiB, desiredDeviceSetCount, currDeviceSetCount)
+		}
+
 		r.storageCluster.Spec = sc.Spec
 
 		return nil
@@ -323,29 +322,24 @@ func findStorageDeviceSet(storageDeviceSets []ocsv1.StorageDeviceSet, deviceSetN
 	return nil
 }
 
-func (r *dataFoundationReconciler) setDeviceSetCount(deviceSet *ocsv1.StorageDeviceSet, desiredDeviceSetCount int, currDeviceSetCount int) {
-	r.Log.Info("Setting storage device set count", "Current", currDeviceSetCount, "New", desiredDeviceSetCount)
-	if currDeviceSetCount <= desiredDeviceSetCount {
-		deviceSet.Count = desiredDeviceSetCount
-	} else {
-		r.Log.V(-1).Info("Requested storage device set count will result in downscaling, which is not supported. Skipping")
+// setDeviceSetProperties sets the storage device set's properties OSD size in TiB and count
+func (r *dataFoundationReconciler) setDeviceSetProperties(deviceSet *ocsv1.StorageDeviceSet, desiredOSDSize *resource.Quantity, currOSDSize *resource.Quantity, desiredDeviceSetCount int, currDeviceSetCount int) {
+	// Downscaling is skipped
+	if desiredDeviceSetCount < currDeviceSetCount || desiredOSDSize.Cmp(*currOSDSize) == -1 {
+		r.Log.V(-1).Info("Requested storage device set properties will result in downscaling, which is not supported. Skipping")
 		deviceSet.Count = currDeviceSetCount
-	}
-}
-
-func (r *dataFoundationReconciler) setDeviceSetOSDSize(ds *ocsv1.StorageDeviceSet, desiredOSDSize float64, currOSDSize float64) {
-	r.Log.Info("Setting storage device set OSD size", "Current", currOSDSize, "New", desiredOSDSize)
-	updatedOSDSize := 0.0
-	if currOSDSize <= desiredOSDSize {
-		updatedOSDSize = desiredOSDSize
-
+		deviceSet.DataPVCTemplate.Spec.Resources.Requests = corev1.ResourceList{
+			"storage": *currOSDSize,
+		}
 	} else {
-		r.Log.V(-1).Info("Requested storage device set OSD size will result in downscaling, which is not supported. Skipping")
-		updatedOSDSize = currOSDSize
+		r.Log.Info("Setting storage device set count", "Current", currDeviceSetCount, "New", desiredDeviceSetCount)
+		deviceSet.Count = desiredDeviceSetCount
+		r.Log.Info("Setting storage device set OSD size", "Current", currOSDSize.String(), "New", desiredOSDSize.String())
+		deviceSet.DataPVCTemplate.Spec.Resources.Requests = corev1.ResourceList{
+			"storage": *desiredOSDSize,
+		}
 	}
-	ds.DataPVCTemplate.Spec.Resources.Requests = corev1.ResourceList{
-		"storage": resource.MustParse(fmt.Sprintf("%vTi", updatedOSDSize)),
-	}
+
 }
 
 // reconcileMonitoringResources labels all monitoring resources (ServiceMonitors, PodMonitors, and PrometheusRules)

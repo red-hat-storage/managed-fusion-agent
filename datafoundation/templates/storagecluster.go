@@ -13,8 +13,6 @@ limitations under the License.
 package templates
 
 import (
-	"fmt"
-
 	df "github.com/red-hat-storage/managed-fusion-agent/datafoundation"
 	"github.com/red-hat-storage/managed-fusion-agent/utils"
 	ocsv1 "github.com/red-hat-storage/ocs-operator/api/v1"
@@ -27,10 +25,11 @@ import (
 // StorageClusterTemplate is the template that serves as the base for the storage clsuter deployed by the operator
 
 const (
-	OSDSizeInTiB                  = 1
-	VerticalScalerUpperBoundInTiB = 4
-	backingStorageClassName       = "default-ocs-storage-class"
+	OSDSizeUpperBoundInTiBUnscaled = 4398046511104
+	backingStorageClassName        = "default-ocs-storage-class"
 )
+
+var OSDSizeUpperBoundInTib = resource.NewQuantity(OSDSizeUpperBoundInTiBUnscaled, resource.BinarySI)
 
 var commonTSC corev1.TopologySpreadConstraint = corev1.TopologySpreadConstraint{
 	MaxSkew:           1,
@@ -139,9 +138,7 @@ var StorageClusterTemplate = ocsv1.StorageCluster{
 					},
 					VolumeMode: utils.ToPointer(corev1.PersistentVolumeBlock),
 					Resources: corev1.ResourceRequirements{
-						Requests: corev1.ResourceList{
-							"storage": resource.MustParse(fmt.Sprintf("%dTi", OSDSizeInTiB)),
-						},
+						Requests: corev1.ResourceList{},
 					},
 				},
 			},
