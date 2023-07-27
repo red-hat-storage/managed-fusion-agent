@@ -25,11 +25,9 @@ import (
 // StorageClusterTemplate is the template that serves as the base for the storage clsuter deployed by the operator
 
 const (
-	OSDSizeUpperBoundInTiBUnscaled = 4398046511104
-	backingStorageClassName        = "default-ocs-storage-class"
+	OSDSizeUpperBoundInTiB  = 4
+	backingStorageClassName = "default-ocs-storage-class"
 )
-
-var OSDSizeUpperBoundInTib = resource.NewQuantity(OSDSizeUpperBoundInTiBUnscaled, resource.BinarySI)
 
 var commonTSC corev1.TopologySpreadConstraint = corev1.TopologySpreadConstraint{
 	MaxSkew:           1,

@@ -51,7 +51,7 @@ const (
 )
 
 type dataFoundationSpec struct {
-	UsableCapacityInTiB     resource.Quantity
+	UsableCapacityInTiB     int
 	OnboardingValidationKey string
 }
 
@@ -263,10 +263,7 @@ func (r *dataFoundationReconciler) reconcileOnboardingValidationSecret() error {
 func (r *dataFoundationReconciler) reconcileStorageCluster() error {
 	r.Log.Info("Reconciling StorageCluster")
 
-	UsableCapacityInTiB := r.spec.UsableCapacityInTiB
-	OSDSizeUpperBoundInTiB := templates.OSDSizeUpperBoundInTib
-
-	if UsableCapacityInTiB.CmpInt64(0) <= 0 {
+	if r.spec.UsableCapacityInTiB <= 0 {
 		return fmt.Errorf("invalid or missing field: UsableCapacityInTiB, provided value is %v", r.spec.UsableCapacityInTiB)
 	}
 
@@ -275,11 +272,14 @@ func (r *dataFoundationReconciler) reconcileStorageCluster() error {
 			return err
 		}
 
+		UsableCapacityInTiB := resource.MustParse(fmt.Sprintf("%dTi", r.spec.UsableCapacityInTiB))
+		OSDSizeUpperBoundInTiB := resource.MustParse(fmt.Sprintf("%dTi", templates.OSDSizeUpperBoundInTiB))
+
 		// Get the desired capacity in TiB planned to be consumed by user in range 1-4TiB
 		// Set desired to be the minimum
 		desiredOSDSizeInTiB := UsableCapacityInTiB
 		if OSDSizeUpperBoundInTiB.Cmp(UsableCapacityInTiB) < 0 {
-			desiredOSDSizeInTiB = *OSDSizeUpperBoundInTiB
+			desiredOSDSizeInTiB = OSDSizeUpperBoundInTiB
 		}
 
 		// Convert the desired size to the device set count based on the underlying OSD size
