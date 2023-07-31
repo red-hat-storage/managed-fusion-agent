@@ -283,7 +283,7 @@ func (r *dataFoundationReconciler) reconcileStorageCluster() error {
 		}
 
 		// Convert the desired size to the device set count based on the underlying OSD size
-		desiredDeviceSetCount := int(math.Ceil(UsableCapacityInTiB.AsApproximateFloat64() / desiredOSDSizeInTiB.AsApproximateFloat64()))
+		desiredDeviceSetCount := int(math.Ceil(float64(UsableCapacityInTiB.ScaledValue(resource.Tera)) / float64(desiredOSDSizeInTiB.ScaledValue(resource.Tera))))
 
 		// Get the desired storage device set from storage cluster template
 		sc := templates.StorageClusterTemplate.DeepCopy()
